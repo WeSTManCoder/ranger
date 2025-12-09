@@ -19,7 +19,7 @@
 
 package org.apache.ranger.rest;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.ranger.admin.client.datatype.RESTResponse;
 import org.apache.ranger.biz.AssetMgr;
 import org.apache.ranger.biz.RangerBizUtil;
@@ -570,6 +570,7 @@ public class AssetREST {
         searchUtil.extractString(request, searchCriteria, "agentHost", "Agent Host Name", StringUtil.VALIDATION_TEXT);
         searchUtil.extractString(request, searchCriteria, "eventId", "Event Id", null);
         searchUtil.extractString(request, searchCriteria, "datasets", "DataSets", null);
+        searchUtil.extractLong(request, searchCriteria, "datasetIds", "Dataset Ids");
 
         boolean      isKeyAdmin      = msBizUtil.isKeyAdmin();
         boolean      isAuditKeyAdmin = msBizUtil.isAuditKeyAdmin();

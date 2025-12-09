@@ -21,8 +21,8 @@ package org.apache.ranger.authorization.hive.authorizer;
 
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
-import org.apache.commons.lang.ArrayUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.ArrayUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -2566,7 +2566,7 @@ public class RangerHiveAuthorizer extends RangerHiveAuthorizerBase {
             ret = hiveOpType == HiveOperationType.EXPORT;
 
             if (!ret) {
-                if (request.getHiveAccessType() == HiveAccessType.UPDATE && RangerHivePlugin.blockUpdateIfRowfilterColumnMaskSpecified) {
+                if ((request.getHiveAccessType() == HiveAccessType.UPDATE || request.getHiveAccessType() == HiveAccessType.ALTER) && RangerHivePlugin.blockUpdateIfRowfilterColumnMaskSpecified) {
                     ret = true;
                 }
             }

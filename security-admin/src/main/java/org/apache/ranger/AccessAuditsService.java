@@ -20,7 +20,7 @@
 package org.apache.ranger;
 
 import org.apache.commons.collections.CollectionUtils;
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.ranger.common.PropertiesUtil;
 import org.apache.ranger.common.RESTErrorUtil;
 import org.apache.ranger.common.SearchField;
@@ -83,6 +83,7 @@ public class AccessAuditsService {
         searchFields.add(new SearchField("cluster", "cluster", SearchField.DATA_TYPE.STRING, SearchField.SEARCH_TYPE.FULL));
         searchFields.add(new SearchField("zoneName", "zoneName", SearchField.DATA_TYPE.STR_LIST, SearchField.SEARCH_TYPE.FULL));
         searchFields.add(new SearchField("datasets", "datasets", SearchField.DATA_TYPE.STR_LIST, SearchField.SEARCH_TYPE.PARTIAL));
+        searchFields.add(new SearchField("datasetIds", "datasetIds", SearchField.DATA_TYPE.INTEGER, SearchField.SEARCH_TYPE.FULL));
         searchFields.add(new SearchField("agentHost", "agentHost", SearchField.DATA_TYPE.STRING, SearchField.SEARCH_TYPE.PARTIAL));
 
         sortFields.add(new SortField("eventTime", "evtTime", true, SortField.SORT_ORDER.DESC));

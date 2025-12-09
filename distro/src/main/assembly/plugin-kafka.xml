@@ -40,6 +40,7 @@
                                 <include>org.apache.ranger:ranger-audit-core</include>
                                 <include>org.apache.ranger:ranger-audit-dest-hdfs</include>
                                 <include>org.apache.ranger:ranger-audit-dest-solr</include>
+                                <include>org.apache.ranger:ranger-authz-api</include>
 				<include>org.apache.ranger:ranger-kafka-plugin</include>
 				<include>org.apache.ranger:ranger-plugins-cred</include>
 				<include>org.apache.ranger:ranger-plugins-common</include>
@@ -63,7 +64,6 @@
 					<include>commons-collections:commons-collections</include>
 					<include>com.sun.jersey:jersey-bundle</include>
 					<include>commons-logging:commons-logging</include>
-					<include>commons-lang:commons-lang</include>
 					<include>commons-io:commons-io</include>
 					<include>org.apache.httpcomponents:httpclient:jar:${httpcomponents.httpclient.version}</include>
 					<include>org.apache.httpcomponents:httpcore:jar:${httpcomponents.httpcore.version}</include>
@@ -120,7 +120,6 @@
 					<include>commons-cli:commons-cli</include>
 					<include>commons-collections:commons-collections</include>
 					<include>commons-io:commons-io:jar:${commons.io.version}</include>
-					<include>commons-lang:commons-lang:jar:${commons.lang.version}</include>
 					<include>commons-logging:commons-logging</include>
 					<include>org.apache.commons:commons-compress:jar:${commons.compress.version}</include>
 					<include>org.apache.commons:commons-configuration2:jar:${commons.configuration.version}</include>

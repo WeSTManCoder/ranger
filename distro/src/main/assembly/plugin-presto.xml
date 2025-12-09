@@ -56,6 +56,7 @@
                 <include>org.apache.ranger:ranger-audit-core</include>
                 <include>org.apache.ranger:ranger-audit-dest-hdfs</include>
                 <include>org.apache.ranger:ranger-audit-dest-solr</include>
+                <include>org.apache.ranger:ranger-authz-api</include>
                 <include>org.apache.ranger:ranger-plugins-cred</include>
                 <include>org.apache.ranger:ranger-plugins-common</include>
                 <include>org.apache.ranger:ugsync-util</include>
@@ -82,7 +83,6 @@
                     <include>org.apache.commons:commons-configuration2:jar:${commons.configuration.version}</include>
                     <include>commons-codec:commons-codec</include>
                     <include>commons-io:commons-io:jar:${commons.io.version}</include>
-                    <include>commons-lang:commons-lang:jar:${commons.lang.version}</include>
                     <include>commons-logging:commons-logging:jar:${commons.logging.version}</include>
                     <include>com.google.protobuf:protobuf-java:jar:${protobuf-java.version}</include>
                     <include>com.google.re2j:re2j:jar:${presto.re2j.version}</include>
@@ -142,7 +142,6 @@
                     <include>commons-cli:commons-cli</include>
                     <include>commons-collections:commons-collections</include>
                     <include>commons-io:commons-io:jar:${commons.io.version}</include>
-                    <include>commons-lang:commons-lang</include>
                     <include>commons-logging:commons-logging:jar:${commons.logging.version}</include>
                     <include>org.apache.commons:commons-compress:jar:${commons.compress.version}</include>
                     <include>org.apache.commons:commons-configuration2:jar:${commons.configuration.version}</include>

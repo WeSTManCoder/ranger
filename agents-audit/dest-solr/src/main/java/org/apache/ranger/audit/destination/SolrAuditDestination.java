@@ -19,7 +19,7 @@
 
 package org.apache.ranger.audit.destination;
 
-import org.apache.commons.lang.StringUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.ranger.audit.model.AuditEventBase;
 import org.apache.ranger.audit.model.AuthzAuditEvent;
 import org.apache.ranger.audit.provider.MiscUtil;
@@ -316,6 +316,7 @@ public class SolrAuditDestination extends AuditDestination {
         doc.setField("tags", auditEvent.getTags());
         doc.addField("datasets", auditEvent.getDatasets());
         doc.addField("projects", auditEvent.getProjects());
+        doc.addField("datasetIds", auditEvent.getDatasetIds());
         doc.setField("cluster", auditEvent.getClusterName());
         doc.setField("zoneName", auditEvent.getZoneName());
         doc.setField("agentHost", auditEvent.getAgentHostname());
