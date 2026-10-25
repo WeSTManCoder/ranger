@@ -14,9 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG RANGER_DB_TYPE
-ARG RANGER_BASE_IMAGE
-ARG RANGER_BASE_VERSION
+ARG RANGER_DB_TYPE=postgres
+ARG RANGER_BASE_IMAGE=apache/ranger-base
+ARG RANGER_BASE_VERSION=20260123-2-17
 FROM ${RANGER_BASE_IMAGE}:${RANGER_BASE_VERSION} AS ranger-kms
 
 ARG KMS_VERSION
@@ -24,7 +24,6 @@ ARG RANGER_DB_TYPE
 
 COPY ./dist/ranger-${KMS_VERSION}-kms.tar.gz                       /home/ranger/dist/
 COPY ./scripts/kms/ranger-kms.sh                                   ${RANGER_SCRIPTS}/
-COPY ./scripts/wait_for_keytab.sh                                  ${RANGER_SCRIPTS}/
 
 RUN tar xvfz /home/ranger/dist/ranger-${KMS_VERSION}-kms.tar.gz --directory=${RANGER_HOME} && \
     ln -s ${RANGER_HOME}/ranger-${KMS_VERSION}-kms ${RANGER_HOME}/kms && \
@@ -38,7 +37,6 @@ RUN tar xvfz /home/ranger/dist/ranger-${KMS_VERSION}-kms.tar.gz --directory=${RA
     ln -s /etc/init.d/ranger-kms /etc/rc3.d/K90ranger-kms && \
     ln -s ${RANGER_HOME}/kms/ranger-kms-services.sh /usr/bin/ranger-kms-services.sh && \
     chown -R rangerkms:ranger ${RANGER_HOME}/kms/ ${RANGER_SCRIPTS}/ /var/run/ranger_kms/ /var/log/ranger/ /etc/ranger && \
-    chmod 755 ${RANGER_SCRIPTS}/wait_for_keytab.sh && \
     chmod 744 ${RANGER_SCRIPTS}/ranger-kms.sh
 
 FROM ranger-kms AS ranger_postgres

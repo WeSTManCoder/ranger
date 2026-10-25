@@ -21,10 +21,12 @@ package org.apache.ranger.metrics;
 
 import org.apache.ranger.metrics.source.RangerAdminMetricsSourceContextEnricher;
 import org.apache.ranger.metrics.source.RangerAdminMetricsSourceDenyConditions;
+import org.apache.ranger.metrics.source.RangerAdminMetricsSourceGds;
 import org.apache.ranger.metrics.source.RangerAdminMetricsSourcePolicyMasking;
 import org.apache.ranger.metrics.source.RangerAdminMetricsSourcePolicyResourceAccess;
 import org.apache.ranger.metrics.source.RangerAdminMetricsSourcePolicyRowFiltering;
 import org.apache.ranger.metrics.source.RangerAdminMetricsSourceService;
+import org.apache.ranger.metrics.source.RangerAdminMetricsSourceSummary;
 import org.apache.ranger.metrics.source.RangerAdminMetricsSourceUserGroup;
 import org.apache.ranger.metrics.wrapper.RangerMetricsSourceWrapper;
 import org.slf4j.Logger;
@@ -68,6 +70,12 @@ public class RangerAdminMetricsWrapper {
     @Autowired
     private RangerAdminMetricsSourceDenyConditions denyConditionSource;
 
+    @Autowired
+    private RangerAdminMetricsSourceSummary summarySource;
+
+    @Autowired
+    private RangerAdminMetricsSourceGds gdsSource;
+
     @PostConstruct
     public void init() {
         LOG.info("===>> RangerAdminMetricsWrapper.init()");
@@ -92,6 +100,12 @@ public class RangerAdminMetricsWrapper {
 
             //Source: DenyConditionService
             sourceWrappers.add(new RangerMetricsSourceWrapper("RangerAdminMetricsSourceDenyConditionService", "Deny Condition in Ranger Admin", context, denyConditionSource));
+
+            //Source: Summary
+            sourceWrappers.add(new RangerMetricsSourceWrapper("RangerAdminMetricsSourceSummary", "Summary in Ranger Admin", context, summarySource));
+
+            //Source: Gds
+            sourceWrappers.add(new RangerMetricsSourceWrapper("RangerAdminMetricsSourceGds", "Gds in Ranger Admin", context, gdsSource));
 
             rangerMetricsSystemWrapper.init(context, sourceWrappers, Collections.emptyList());
         } catch (Exception e) {

@@ -21,6 +21,7 @@ package org.apache.ranger.admin.client;
 
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.ranger.audit.provider.MiscUtil;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
@@ -94,5 +95,55 @@ public class TestAbstractRangerAdminClient {
         Assertions.assertNull(c.getTagTypes("x"));
         Assertions.assertNull(c.getUserStoreIfUpdated(1L, 2L));
         Assertions.assertNull(c.getGdsInfoIfUpdated(1L, 2L));
+    }
+
+    @Test
+    public void test04_isSecureEndpointAccess() {
+        DummyClient   c   = new DummyClient();
+        Configuration cfg = new Configuration(false);
+        cfg.setBoolean("ranger.plugin.forceSecureEndpointAccess", true);
+        c.init("svc", "app", "ranger.plugin", cfg);
+        Assertions.assertTrue(c.isAuthenticationEnabled());
+    }
+
+    @Test
+    public void test05_secureEndpointAccessIsDefault() {
+        DummyClient c = new DummyClient();
+        c.init("svc", "app", "p", new Configuration(false));
+        Assertions.assertTrue(c.isAuthenticationEnabled());
+    }
+
+    @Test
+    public void test06_forceNonKerberos_keepsSecureEndpointAccessUnlessDisabled() {
+        DummyClient   c   = new DummyClient();
+        Configuration cfg = new Configuration(false);
+        cfg.setBoolean("p.forceNonKerberos", true);
+        c.init("svc", "app", "p", cfg);
+        Assertions.assertTrue(c.isAuthenticationEnabled());
+
+        cfg.setBoolean("p.forceSecureEndpointAccess", false);
+        c.init("svc", "app", "p", cfg);
+        Assertions.assertFalse(c.isAuthenticationEnabled());
+    }
+
+    @Test
+    public void test07_secureEndpointAccessDisabled_followsKerberos() {
+        DummyClient   c   = new DummyClient();
+        Configuration cfg = new Configuration(false);
+        cfg.setBoolean("p.forceSecureEndpointAccess", false);
+        c.init("svc", "app", "p", cfg);
+
+        UserGroupInformation ugi = Mockito.mock(UserGroupInformation.class);
+        try (MockedStatic<MiscUtil> misc = Mockito.mockStatic(MiscUtil.class);
+                MockedStatic<UserGroupInformation> ugiStatic = Mockito.mockStatic(UserGroupInformation.class)) {
+            misc.when(MiscUtil::getUGILoginUser).thenReturn(ugi);
+            ugiStatic.when(UserGroupInformation::isSecurityEnabled).thenReturn(true);
+
+            Mockito.when(ugi.hasKerberosCredentials()).thenReturn(true);
+            Assertions.assertTrue(c.isAuthenticationEnabled());
+
+            Mockito.when(ugi.hasKerberosCredentials()).thenReturn(false);
+            Assertions.assertFalse(c.isAuthenticationEnabled());
+        }
     }
 }

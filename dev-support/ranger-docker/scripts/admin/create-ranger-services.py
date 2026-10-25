@@ -1,16 +1,69 @@
+import logging
+import os
+import sys
+import time
+
+import requests
+
 from apache_ranger.model.ranger_service import RangerService
 from apache_ranger.client.ranger_client import RangerClient
-from json import JSONDecodeError
 
-ranger_client = RangerClient('http://ranger:6080', ('admin', 'rangerR0cks!'))
+# colors only when attached to a terminal (e.g. docker compose with tty), plain text otherwise (e.g. log collectors)
+COLOR = sys.stdout.isatty() and 'NO_COLOR' not in os.environ
+
+
+def style(text, code):
+    return f'\033[{code}m{text}\033[0m' if COLOR else text
+
+
+class ConsoleFormatter(logging.Formatter):
+    LEVELS = {logging.INFO: ('INFO ', '32'), logging.WARNING: ('WARN ', '33'), logging.ERROR: ('ERROR', '1;31')}
+
+    def format(self, record):
+        label, code = self.LEVELS.get(record.levelno, (record.levelname[:5], '0'))
+
+        return f"{style(self.formatTime(record, '%H:%M:%S'), '2')} {style(label, code)} {record.getMessage()}"
+
+
+console_handler = logging.StreamHandler(sys.stdout)
+file_handler    = logging.FileHandler(os.path.join(os.environ.get('RANGER_ADMIN_LOG_DIR', '/var/log/ranger'), 'create-ranger-services.log'))
+
+console_handler.setFormatter(ConsoleFormatter())
+file_handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)-5s %(message)s'))
+logging.basicConfig(level=logging.INFO, handlers=(console_handler, file_handler))
+
+RANGER_URL    = 'http://localhost:6080'
+ranger_client = RangerClient(RANGER_URL, ('admin', os.environ['RANGER_ADMIN_PASSWORD']))
+
+def print_section(title):
+    print(style(f'━━━ ▶ {title} '.ljust(110, '━'), '1;36'), flush=True)
+
+
+def wait_for_ranger_admin(timeout=int(os.environ.get('RANGER_ADMIN_WAIT_TIMEOUT', '300'))):
+    start = time.time()
+
+    # readiness is served only to the healthcheck user, authenticated via trusted header (ranger.admin.authn.header.username)
+    while time.time() - start < timeout:
+        try:
+            readiness = requests.get(f'{RANGER_URL}/service/actuator/health/readiness', headers={'X-Forwarded-User': 'healthcheck'}, timeout=5).json()
+
+            if readiness.get('status') == 'UP':
+                return readiness
+        except (requests.RequestException, ValueError):
+            pass
+
+        logging.info(f'⏳ Waiting for Ranger Admin to become ready: {int(time.time() - start)}s elapsed')
+
+        time.sleep(5)
+
+    return None
 
 
 def service_not_exists(service):
-    try:
-        svc = ranger_client.get_service(service.name)
-    except JSONDecodeError:
-        return 1
-    return 0 if svc is not None else 1
+    # search by name instead of get_service(), which fails with HTTP 404 for a service not created yet
+    services = ranger_client.find_services({'serviceName': service.name}) or []
+
+    return not any(svc.name == service.name for svc in services)
 
 
 hdfs = RangerService({'name': 'dev_hdfs', 'type': 'hdfs',
@@ -21,6 +74,17 @@ hdfs = RangerService({'name': 'dev_hdfs', 'type': 'hdfs',
                                   'policy.download.auth.users': 'hdfs',
                                   'tag.download.auth.users': 'hdfs',
                                   'userstore.download.auth.users': 'hdfs',
+                                  'setup.additional.default.policies': 'true',
+                                  'default-policy.1.name': 'hive-tez-path',
+                                  'default-policy.1.resource.path': '/apps/tez,/tmp/hive',
+                                  'default-policy.1.resource.path.is-recursive': 'true',
+                                  'default-policy.1.policyItem.1.users': 'hive',
+                                  'default-policy.1.policyItem.1.accessTypes': 'read,write,execute',
+                                  'default-policy.2.name': 'ranger-audit-path',
+                                  'default-policy.2.resource.path': '/ranger/audit',
+                                  'default-policy.2.resource.path.is-recursive': 'true',
+                                  'default-policy.2.policyItem.1.users': 'rangerauditserver',
+                                  'default-policy.2.policyItem.1.accessTypes': 'read,write,execute',
                                   'ranger.plugin.hdfs.policy.refresh.synchronous':'true'}})
 
 hive = RangerService({'name': 'dev_hive', 'type': 'hive',
@@ -47,7 +111,19 @@ kafka = RangerService({'name': 'dev_kafka', 'type': 'kafka',
                                    'default-policy.2.resource.consumergroup': 'ranger_entities_consumer',
                                    'default-policy.2.policyItem.1.users': 'rangertagsync',
                                    'default-policy.2.policyItem.1.accessTypes': 'consume,describe',
-                                   'ranger.plugin.audit.filters': "[{'accessResult': 'DENIED', 'isAudited': true},{'resources':{'topic':{'values':['ATLAS_ENTITIES']}},'users':['rangertagsync'],'actions':['create','consume','describe'],'isAudited':false},{'resources':{'consumergroup':{'values':['ranger_entities_consumer']}},'users':['rangertagsync'],'actions':['consume'],'isAudited':false}]",
+                                   'default-policy.3.name': 'topic: ranger_audit*',
+                                   'default-policy.3.resource.topic': 'ranger_audit*,__consumer_offsets',
+                                   'default-policy.3.policyItem.1.users': 'rangerauditserver',
+                                   'default-policy.3.policyItem.1.accessTypes': 'create,configure,consume,publish,describe,create,delete,alter,describe_configs,alter_configs',
+                                   'default-policy.4.name': 'consumergroup: ranger_audit*',
+                                   'default-policy.4.resource.consumergroup': 'ranger_audit*',
+                                   'default-policy.4.policyItem.1.users': 'rangerauditserver',
+                                   'default-policy.4.policyItem.1.accessTypes': 'consume,describe,delete',
+                                   'default-policy.5.name': 'cluster: audit server cluster permissions',
+                                   'default-policy.5.resource.cluster': '*,dummy',
+                                   'default-policy.5.policyItem.1.users': 'rangerauditserver',
+                                   'default-policy.5.policyItem.1.accessTypes': 'configure,describe,alter,create,idempotent_write,describe_configs,alter_configs',
+                                   'ranger.plugin.audit.filters': "[{'accessResult': 'DENIED', 'isAudited': true},{'resources':{'topic':{'values':['ATLAS_ENTITIES']}},'users':['rangertagsync'],'actions':['create','consume','describe'],'isAudited':false},{'resources':{'consumergroup':{'values':['ranger_entities_consumer']}},'users':['rangertagsync'],'actions':['consume'],'isAudited':false},{'users':['kafka'],'isAudited':false},{'users':['rangerauditserver'],'isAudited':false}]",
                                    'userstore.download.auth.users': 'kafka',
                                    'ranger.plugin.kafka.policy.refresh.synchronous':'true'}})
 
@@ -80,8 +156,8 @@ hbase = RangerService({'name': 'dev_hbase', 'type': 'hbase',
                                    'ranger.plugin.hbase.policy.refresh.synchronous':'true'}})
 
 kms = RangerService({'name': 'dev_kms', 'type': 'kms',
-                     'configs': {'username': 'keyadmin', 'password': 'rangerR0cks!',
-                                 'provider': 'http://ranger-kms.rangernw:9292',
+                     'configs': {'username': 'keyadmin', 'password': os.environ.get('RANGER_KEYADMIN_PASSWORD', 'rangerR0cks!'),
+                                 'provider': 'kms://http@ranger-kms.rangernw:9292/kms',
                                  'policy.download.auth.users': 'rangerkms',
                                  'tag.download.auth.users': 'rangerkms',
                                  'userstore.download.auth.users': 'rangerkms',
@@ -106,16 +182,46 @@ ozone = RangerService({'name': 'dev_ozone',
                        'configs': {'username': 'hdfs', 'password': 'hdfs',
                                    'ozone.om.http-address': 'http://om:9874',
                                    'hadoop.security.authentication': 'simple',
-                                   'policy.download.auth.users': 'ozone',
-                                   'tag.download.auth.users': 'ozone',
-                                   'userstore.download.auth.users': 'ozone',
+                                   'policy.download.auth.users': 'om',
+                                   'tag.download.auth.users': 'om',
+                                   'userstore.download.auth.users': 'om',
                                    'ranger.plugin.ozone.policy.refresh.synchronous':'true'}})
 
-services = [hdfs, yarn, hive, hbase, kafka, knox, kms, trino, ozone]
+solr = RangerService({'name': 'dev_solr', 'type': 'solr',
+                     'configs': {'username': 'solr', 'password': 'rangerR0cks!',
+                                 'solr.url': 'http://ranger-solr.rangernw:8983',
+                                 'setup.additional.default.policies': 'true',
+                                 'default-policy.1.name': 'collection: ranger_audits',
+                                 'default-policy.1.resource.collection': 'ranger_audits',
+                                 'default-policy.1.policyItem.1.users': 'rangerauditserver',
+                                 'default-policy.1.policyItem.1.accessTypes': 'query,update',
+                                 'policy.download.auth.users': 'solr',
+                                 'tag.download.auth.users': 'solr',
+                                 'userstore.download.auth.users': 'solr',
+                                 'ranger.plugin.super.users': 'solr',
+                                 'ranger.plugin.solr.policy.refresh.synchronous':'true'}})
+
+readiness = wait_for_ranger_admin()
+
+print_section('create-ranger-services.py · dev services')
+
+if not readiness:
+    logging.error('✖ Ranger Admin is not ready, see Ranger Admin log above')
+    sys.exit(1)
+
+started      = os.environ.get('RANGER_ADMIN_START_TIME')
+uptime       = f' in {int(time.time()) - int(started)}s' if started else ''
+service_defs = len(readiness.get('details', {}).get('components', {}).get('service-defs', []))
+
+logging.info(f"✔ Ranger Admin {os.environ.get('RANGER_VERSION', '')} is up and ready{uptime}, {service_defs} service-defs loaded")
+
+services = [hdfs, yarn, hive, hbase, kafka, knox, kms, trino, ozone, solr]
 for service in services:
     try:
         if service_not_exists(service):
             ranger_client.create_service(service)
-            print(f" {service.name} service created!")
+            logging.info(f"✔ {service.name} service created")
+        else:
+            logging.info(f"{service.name} service already exists")
     except Exception as e:
-        print(f"An exception occured: {e}")
+        logging.error(f"✖ An exception occurred while creating {service.name} service: {e}")

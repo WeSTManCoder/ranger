@@ -14,27 +14,33 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-ARG SOLR_VERSION
+ARG RANGER_BASE_IMAGE=apache/ranger-base
+ARG RANGER_BASE_VERSION=20260123-2-8
+ARG SOLR_VERSION=9.4.1
+FROM ${RANGER_BASE_IMAGE}:${RANGER_BASE_VERSION} AS ranger-base
 FROM solr:${SOLR_VERSION}
 
-VOLUME /etc/keytabs
+ARG SOLR_PLUGIN_VERSION
 
-# Copy audit config set
-USER 0
+USER root
 
 RUN apt update && DEBIAN_FRONTEND="noninteractive" apt-get install -y krb5-user
 
-RUN mkdir -p /opt/solr/server/solr/configsets/ranger_audits/conf /home/ranger/scripts
-
-COPY ./scripts/solr/solr-ranger_audits/* /opt/solr/server/solr/configsets/ranger_audits/conf/
-COPY ./scripts/solr/solr-jaas.conf       /opt/solr/server/etc/jaas.conf
-COPY ./scripts/solr/solr-security.json   /var/solr/data/security.json
-COPY ./scripts/solr/ranger-solr.sh       /home/ranger/scripts/
-COPY ./scripts/wait_for_keytab.sh        /home/ranger/scripts/
-COPY ./scripts/kdc/krb5.conf             /etc/krb5.conf
-
+RUN mkdir -p /opt/solr/server/solr/configsets/ranger_audits/conf /home/ranger/dist /opt/ranger /home/ranger/scripts
 RUN chown -R solr:solr /opt/solr/server/solr/configsets/ranger_audits/
-RUN chmod +x /home/ranger/scripts/ranger-solr.sh /home/ranger/scripts/wait_for_keytab.sh
 
-ENTRYPOINT [ "/home/ranger/scripts/ranger-solr.sh" ]
+COPY --from=ranger-base /home/ranger/scripts/wait_for_keytab.sh             /home/ranger/scripts/wait_for_keytab.sh
+COPY --from=ranger-base /home/ranger/scripts/wait_for_testusers_keytab.sh   /home/ranger/scripts/wait_for_testusers_keytab.sh
+
+# Copy Ranger plugin
+COPY ./dist/ranger-${SOLR_PLUGIN_VERSION}-solr-plugin.tar.gz /home/ranger/dist/
+
+RUN tar xvfz /home/ranger/dist/ranger-${SOLR_PLUGIN_VERSION}-solr-plugin.tar.gz --directory=/opt/ranger && \
+    ln -s /opt/ranger/ranger-${SOLR_PLUGIN_VERSION}-solr-plugin /opt/ranger/ranger-solr-plugin && \
+    rm -f /home/ranger/dist/ranger-${SOLR_PLUGIN_VERSION}-solr-plugin.tar.gz && \
+    rm -f /opt/ranger/ranger-solr-plugin/install.properties && \
+    mkdir -p /var/solr/data /etc/ranger && \
+    chown -R solr:solr /opt/ranger /var/solr /etc/ranger
+
+ENTRYPOINT [ "/opt/ranger/ranger-solr.sh" ]
 CMD ["solr-foreground"]

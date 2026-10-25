@@ -23,7 +23,6 @@ import { Form, Field } from "react-final-form";
 import { toast } from "react-toastify";
 import arrayMutators from "final-form-arrays";
 import { FieldArray } from "react-final-form-arrays";
-import Select from "react-select";
 import AsyncSelect from "react-select/async";
 import AsyncCreatableSelect from "react-select/async-creatable";
 import { RegexValidation, additionalServiceConfigs } from "Utils/XAEnums";
@@ -42,7 +41,9 @@ import {
   CustomPopover,
   Loader,
   scrollToError,
-  selectInputCustomStyles
+  selectInputCustomStyles,
+  trimInputValue,
+  ConfirmationClearIndicator
 } from "Components/CommonComponents";
 import {
   difference,
@@ -62,7 +63,8 @@ import {
   cloneDeep,
   intersection,
   join,
-  sortBy
+  sortBy,
+  includes
 } from "lodash";
 import withRouter from "Hooks/withRouter";
 import { RangerPolicyType } from "Utils/XAEnums";
@@ -387,8 +389,8 @@ class ServiceForm extends Component {
 
     const serviceJson = {};
     serviceJson["name"] = serviceResp?.data?.name;
-    serviceJson["displayName"] = serviceResp?.data?.displayName;
-    serviceJson["description"] = serviceResp?.data?.description;
+    serviceJson["displayName"] = serviceResp?.data?.displayName?.trim();
+    serviceJson["description"] = serviceResp?.data?.description?.trim();
     serviceJson["isEnabled"] = JSON.stringify(serviceResp?.data?.isEnabled);
 
     serviceJson["tagService"] =
@@ -401,7 +403,13 @@ class ServiceForm extends Component {
 
     serviceJson["configs"] = {};
 
-    let serviceDefConfigs = map(this.state?.serviceDef?.configs, "name");
+    const excludedServiceConfig = map(additionalServiceConfigs, "name");
+    let serviceDefConfigs = map(
+      reject(this.state?.serviceDef?.configs, (config) =>
+        includes(excludedServiceConfig, config.name)
+      ),
+      "name"
+    );
     let serviceCustomConfigs = without(
       difference(keys(serviceResp?.data?.configs), serviceDefConfigs),
       "ranger.plugin.audit.filters"
@@ -409,7 +417,7 @@ class ServiceForm extends Component {
 
     serviceDefConfigs.map((config) => {
       serviceJson["configs"][config.replaceAll(".", "_").replaceAll("-", "_")] =
-        serviceResp?.data?.configs?.[config];
+        serviceResp?.data?.configs?.[config]?.trim();
     });
 
     const additionalConfigs = intersection(
@@ -435,7 +443,10 @@ class ServiceForm extends Component {
 
     let editCustomConfigs = sortBy(
       difference(serviceCustomConfigs, additionalConfigs)?.map((config) => {
-        return { name: config, value: serviceResp?.data?.configs[config] };
+        return {
+          name: config?.trim(),
+          value: serviceResp?.data?.configs[config]?.trim()
+        };
       }),
       "name"
     );
@@ -703,6 +714,12 @@ class ServiceForm extends Component {
                 isClearable={true}
                 styles={selectInputCustomStyles}
                 isMulti
+                clearConfirmMessage={
+                  additionalConfig.type == "user" ? "Users" : "Groups"
+                }
+                components={{
+                  ClearIndicator: ConfirmationClearIndicator
+                }}
               />
             </Col>
           </Row>
@@ -716,9 +733,13 @@ class ServiceForm extends Component {
   getServiceConfigs = (serviceDef) => {
     if (serviceDef?.configs !== undefined) {
       let formField = [];
-      const filterServiceConfigs = reject(serviceDef.configs, {
-        name: "ranger.plugin.audit.filters"
-      });
+      const configNamesToExclude = [
+        "ranger.plugin.audit.filters",
+        ...map(additionalServiceConfigs, "name")
+      ];
+      const filterServiceConfigs = reject(serviceDef.configs, (config) =>
+        includes(configNamesToExclude, config.name)
+      );
       filterServiceConfigs.map((configParam) => {
         this.configsJson[configParam.name] = configParam.name
           .replaceAll(".", "_")
@@ -762,6 +783,7 @@ class ServiceForm extends Component {
                         data-cy={
                           "configs." + this.configsJson[configParam.name]
                         }
+                        onBlur={(e) => trimInputValue(e, input)}
                       />
                     </Col>
                     {configInfo.length === 1 && (
@@ -972,8 +994,8 @@ class ServiceForm extends Component {
       : undefined;
 
   validateDisplayName = (value) =>
-    !RegexValidation.NAME_VALIDATION.regexforNameValidation.test(value)
-      ? RegexValidation.NAME_VALIDATION.regexforNameValidationMessage
+    !RegexValidation.NAME_VALIDATION.regexForNameValidation.test(value)
+      ? RegexValidation.NAME_VALIDATION.regexForNameValidationMessage
       : undefined;
 
   composeValidators =
@@ -984,16 +1006,12 @@ class ServiceForm extends Component {
         undefined
       );
 
-  SelectField = ({ input, ...rest }) => (
-    <Select {...input} {...rest} searchable />
-  );
-
   AsyncSelectField = ({ input, ...rest }) => (
-    <AsyncSelect {...input} {...rest} cacheOptions />
+    <AsyncSelect {...input} {...rest} cacheOptions tabSelectsValue={false} />
   );
 
   AsyncCreatableSelectField = ({ input, ...rest }) => (
-    <AsyncCreatableSelect {...input} {...rest} />
+    <AsyncCreatableSelect {...input} {...rest} tabSelectsValue={false} />
   );
 
   fetchUsers = async (inputValue) => {
@@ -1209,6 +1227,7 @@ class ServiceForm extends Component {
                                         : "form-control"
                                     }
                                     data-cy="displayName"
+                                    onBlur={(e) => trimInputValue(e, input)}
                                   />
                                 </Col>
                                 {meta.error && meta.touched && (
@@ -1236,6 +1255,7 @@ class ServiceForm extends Component {
                                         : "form-control"
                                     }
                                     data-cy="description"
+                                    onBlur={(e) => trimInputValue(e, input)}
                                   />
                                 </Col>
                                 {meta.error && meta.touched && (
@@ -1334,22 +1354,34 @@ class ServiceForm extends Component {
                                       fields.map((name, index) => (
                                         <tr key={name}>
                                           <td className="text-center">
-                                            <Field
-                                              name={`${name}.name`}
-                                              component="input"
-                                              className="form-control"
-                                              data-js="name"
-                                              data-cy="name"
-                                            />
+                                            <Field name={`${name}.name`}>
+                                              {({ input }) => (
+                                                <input
+                                                  {...input}
+                                                  className="form-control"
+                                                  data-js="name"
+                                                  data-cy="name"
+                                                  onBlur={(e) =>
+                                                    trimInputValue(e, input)
+                                                  }
+                                                />
+                                              )}
+                                            </Field>
                                           </td>
                                           <td className="text-center">
-                                            <Field
-                                              name={`${name}.value`}
-                                              component="input"
-                                              className="form-control"
-                                              data-js="value"
-                                              data-cy="value"
-                                            />
+                                            <Field name={`${name}.value`}>
+                                              {({ input }) => (
+                                                <input
+                                                  {...input}
+                                                  className="form-control"
+                                                  data-js="value"
+                                                  data-cy="value"
+                                                  onBlur={(e) =>
+                                                    trimInputValue(e, input)
+                                                  }
+                                                />
+                                              )}
+                                            </Field>
                                           </td>
                                           <td className="text-center">
                                             <Button

@@ -17,7 +17,7 @@
 
 package org.apache.hadoop.crypto.key;
 
-import com.sun.jersey.core.util.Base64;
+import com.sun.org.apache.xml.internal.security.utils.Base64;
 import org.apache.hadoop.crypto.key.kms.server.DerbyTestUtils;
 import org.apache.hadoop.crypto.key.kms.server.KMSConfiguration;
 import org.apache.ranger.entity.XXRangerMasterKey;
@@ -183,7 +183,7 @@ public class RangerMasterKeyTest {
         byte[] key = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
                 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
                 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17};
-        rangerMasterKey.generateMKFromHSMMK(password, key);
+        rangerMasterKey.setExternalKeyAsMK(password, key);
     }
 
     @Test
@@ -197,7 +197,7 @@ public class RangerMasterKeyTest {
         byte[] key = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
                 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
                 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17};
-        rangerMasterKey.generateMKFromKeySecureMK(password, key);
+        rangerMasterKey.setExternalKeyAsMK(password, key);
 
         assertNotNull(rangerMasterKey.getMasterKey(password));
     }

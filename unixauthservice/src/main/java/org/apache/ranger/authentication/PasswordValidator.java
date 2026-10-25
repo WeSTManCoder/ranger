@@ -32,15 +32,19 @@ import java.util.List;
 
 public class PasswordValidator implements Runnable {
     private static final Logger LOG = LoggerFactory.getLogger(PasswordValidator.class);
+    private static final String GENERIC_FAILURE_RESPONSE = "FAILED: Authentication failed.";
+    private static final String LOCKED_OUT_RESPONSE = "FAILED: Too many attempts. Try again later.";
 
     private static List<String> adminUserList;
     private static String adminRoleNames;
     private static String validatorProgram;
 
+    private final LoginAttemptTracker loginAttemptTracker;
     private Socket client;
 
-    public PasswordValidator(Socket client) {
+    public PasswordValidator(Socket client, LoginAttemptTracker loginAttemptTracker) {
         this.client = client;
+        this.loginAttemptTracker = loginAttemptTracker;
     }
 
     public static String getValidatorProgram() {
@@ -74,24 +78,42 @@ public class PasswordValidator implements Runnable {
 
         String userName = null;
 
+        String remoteIp = client.getInetAddress() != null ? client.getInetAddress().getHostAddress() : "unknown";
         try {
             reader = new BufferedReader(new InputStreamReader(client.getInputStream()));
             writer = new PrintWriter(new OutputStreamWriter(client.getOutputStream()));
             String request = reader.readLine();
+            userName = parseUserName(request);
+            if (loginAttemptTracker.isBlocked(remoteIp)) {
+                LOG.warn("Rejected UnixAuth attempt from [{}] - source IP is temporarily locked out due to repeated failures.", remoteIp);
+                writer.println(LOCKED_OUT_RESPONSE);
+                writer.flush();
+                return;
+            }
+            if (request == null) {
+                loginAttemptTracker.recordFailure(remoteIp, userName);
+                LOG.warn("Rejected UnixAuth attempt from [{}] - connection closed before sending any data.", remoteIp);
+                writer.println(GENERIC_FAILURE_RESPONSE);
+                writer.flush();
+                return;
+            }
+            long accountDelayMs = loginAttemptTracker.getAccountDelayMs(userName);
 
-            if (request.startsWith("LOGIN:")) {
-                String line       = request.substring(6).trim();
-                int    passwordAt = line.indexOf(' ');
-                if (passwordAt != -1) {
-                    userName = line.substring(0, passwordAt).trim();
+            if (accountDelayMs > 0) {
+                LOG.warn("Applying {}ms delay for user [{}] from [{}] - failures against this account recently seen from multiple source IPs.", accountDelayMs, userName, remoteIp);
+
+                try {
+                    Thread.sleep(accountDelayMs);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
                 }
             }
 
             if (validatorProgram == null) {
-                String res = "FAILED: Unable to validate credentials.";
-                writer.println(res);
+                loginAttemptTracker.recordFailure(remoteIp, userName);
+                LOG.error("Response [{}] for user: {} from [{}] as ValidatorProgram is not defined in configuration.", GENERIC_FAILURE_RESPONSE, userName, remoteIp);
+                writer.println(GENERIC_FAILURE_RESPONSE);
                 writer.flush();
-                LOG.error("Response [{}] for user: {} as ValidatorProgram is not defined in configuration", res, userName);
             } else {
                 BufferedReader pReader;
                 PrintWriter    pWriter;
@@ -109,14 +131,18 @@ public class PasswordValidator implements Runnable {
                     String res = pReader.readLine();
 
                     if (res != null && res.startsWith("OK")) {
+                        loginAttemptTracker.recordSuccess(remoteIp, userName);
                         if (adminRoleNames != null && adminUserList != null) {
                             if (adminUserList.contains(userName)) {
                                 res = res + " " + adminRoleNames;
                             }
                         }
+                    } else {
+                        loginAttemptTracker.recordFailure(remoteIp, userName);
+                        res = GENERIC_FAILURE_RESPONSE;
                     }
 
-                    LOG.info("Response [{}] for user: {}", res, userName);
+                    LOG.info("Response [{}] for user: {} from [{}]", res, userName, remoteIp);
 
                     writer.println(res);
                     writer.flush();
@@ -127,10 +153,11 @@ public class PasswordValidator implements Runnable {
                 }
             }
         } catch (Throwable t) {
+            loginAttemptTracker.recordFailure(remoteIp, userName);
             if (userName != null && writer != null) {
-                String res = "FAILED: unable to validate due to error " + t.getMessage();
-                writer.println(res);
-                LOG.error("Response [{}] for user: {} message: {}", res, userName, t.getMessage());
+                LOG.error("Response [{}] for user: {} from [{}], {}", GENERIC_FAILURE_RESPONSE, userName, remoteIp, t.getMessage());
+                writer.println(GENERIC_FAILURE_RESPONSE);
+                writer.flush();
             }
         } finally {
             try {
@@ -143,5 +170,17 @@ public class PasswordValidator implements Runnable {
                 client = null;
             }
         }
+    }
+
+    private static String parseUserName(String request) {
+        if (request == null || !request.startsWith("LOGIN:")) {
+            return null;
+        }
+        String line = request.substring(6).trim();
+        int passwordAt = line.indexOf(' ');
+        if (passwordAt == -1) {
+            return null;
+        }
+        return line.substring(0, passwordAt).trim();
     }
 }

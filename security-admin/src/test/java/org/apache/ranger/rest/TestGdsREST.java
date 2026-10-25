@@ -50,6 +50,9 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Mockito;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.mockito.junit.jupiter.MockitoSettings;
+import org.mockito.quality.Strictness;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
@@ -72,6 +75,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -79,7 +83,6 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.any;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -89,6 +92,7 @@ import static org.mockito.Mockito.when;
 * @description <Unit Test for TestGdsREST class>
 */
 @ExtendWith(MockitoExtension.class)
+@MockitoSettings(strictness = Strictness.LENIENT)
 @TestMethodOrder(MethodOrderer.MethodName.class)
 public class TestGdsREST {
     private final HttpServletRequest request = Mockito.mock(HttpServletRequest.class);
@@ -98,8 +102,6 @@ public class TestGdsREST {
     private final Random             random           = new Random();
     @InjectMocks
     private GdsREST  gdsREST;
-    @InjectMocks
-    GdsDBStore       gdsDBStore;
     @Mock
     ServiceREST      serviceREST;
     @Mock
@@ -149,7 +151,7 @@ public class TestGdsREST {
         RangerGds.RangerDataset dataset = createRangerDataSet();
 
         when(gdsStore.createDataset(dataset)).thenThrow(new RuntimeException("Database error"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.createDataset(dataset));
     }
@@ -176,7 +178,7 @@ public class TestGdsREST {
         List<RangerGds.RangerDataShareInDataset> dataSharesInDataset = Arrays.asList(invalidDataShare);
 
         when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_BAD_REQUEST), anyString(), eq(false)))
-                .thenReturn(new WebApplicationException());
+                .thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class,
                 () -> gdsREST.addDataSharesInDataset(datasetId, dataSharesInDataset));
@@ -201,7 +203,7 @@ public class TestGdsREST {
     @Test
     public void testUpdateDatasetException() throws Exception {
         when(gdsStore.updateDataset(any(RangerGds.RangerDataset.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.updateDataset(1L, createRangerDataSet()));
     }
@@ -220,7 +222,7 @@ public class TestGdsREST {
     @Test
     public void testDeleteDatasetException() throws Exception {
         Mockito.doThrow(new RuntimeException("err")).when(gdsStore).deleteDataset(Mockito.anyLong(), Mockito.anyBoolean());
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.deleteDataset(1L, request));
     }
@@ -255,7 +257,7 @@ public class TestGdsREST {
     @Test
     public void testGetDatasetException() throws Exception {
         when(gdsStore.getDataset(Mockito.anyLong())).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getDataset(1L));
     }
@@ -266,7 +268,7 @@ public class TestGdsREST {
 
         when(gdsStore.getDataset(datasetId)).thenReturn(null);
         when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_NOT_FOUND), anyString(), eq(false)))
-                .thenReturn(new WebApplicationException());
+                .thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getDataset(datasetId));
     }
@@ -292,7 +294,7 @@ public class TestGdsREST {
         SearchFilter filter = new SearchFilter();
         when(searchUtil.getSearchFilter(request, datasetService.sortFields)).thenReturn(filter);
         when(gdsStore.searchDatasets(filter)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.searchDatasets(request));
     }
@@ -362,7 +364,7 @@ public class TestGdsREST {
     @Test
     public void testAddDatasetPolicyException() throws Exception {
         when(gdsStore.addDatasetPolicy(Mockito.anyLong(), any(RangerPolicy.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.addDatasetPolicy(1L, createPolicy()));
     }
@@ -387,7 +389,7 @@ public class TestGdsREST {
     @Test
     public void testUpdateDatasetPolicyException() throws Exception {
         when(gdsStore.updateDatasetPolicy(Mockito.anyLong(), any(RangerPolicy.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.updateDatasetPolicy(1L, 2L, createPolicy()));
     }
@@ -407,7 +409,7 @@ public class TestGdsREST {
     @Test
     public void testDeleteDatasetPolicyException() throws Exception {
         Mockito.doThrow(new RuntimeException("err")).when(gdsStore).deleteDatasetPolicy(Mockito.anyLong(), Mockito.anyLong());
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.deleteDatasetPolicy(1L, 2L));
     }
@@ -431,7 +433,7 @@ public class TestGdsREST {
     @Test
     public void testGetDatasetPolicyException() throws Exception {
         when(gdsStore.getDatasetPolicy(Mockito.anyLong(), Mockito.anyLong())).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getDatasetPolicy(1L, 2L));
     }
@@ -453,7 +455,7 @@ public class TestGdsREST {
     @Test
     public void testGetDatasetPoliciesException() {
         when(gdsStore.getDatasetPolicies(Mockito.anyLong())).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getDatasetPolicies(1L, request));
     }
@@ -476,7 +478,7 @@ public class TestGdsREST {
     @Test
     public void testCreateProjectException() {
         when(gdsStore.createProject(any(RangerGds.RangerProject.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.createProject(createProject()));
     }
@@ -500,7 +502,7 @@ public class TestGdsREST {
     @Test
     public void testUpdateProjectException() throws Exception {
         when(gdsStore.updateProject(any(RangerGds.RangerProject.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.updateProject(1L, createProject()));
     }
@@ -519,7 +521,7 @@ public class TestGdsREST {
     @Test
     public void testDeleteProjectException() throws Exception {
         Mockito.doThrow(new RuntimeException("err")).when(gdsStore).deleteProject(Mockito.anyLong(), Mockito.anyBoolean());
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.deleteProject(1L, request));
     }
@@ -542,7 +544,7 @@ public class TestGdsREST {
     @Test
     public void testGetProjectException() throws Exception {
         when(gdsStore.getProject(Mockito.anyLong())).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getProject(1L));
     }
@@ -553,7 +555,7 @@ public class TestGdsREST {
 
         when(gdsStore.getProject(projectId)).thenReturn(null);
         when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_NOT_FOUND), anyString(), eq(false)))
-                .thenReturn(new WebApplicationException());
+                .thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getProject(projectId));
     }
@@ -579,7 +581,7 @@ public class TestGdsREST {
         SearchFilter filter = new SearchFilter();
         when(searchUtil.getSearchFilter(request, datasetService.sortFields)).thenReturn(filter);
         when(gdsStore.searchProjects(filter)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.searchProjects(request));
     }
@@ -648,7 +650,7 @@ public class TestGdsREST {
     @Test
     public void testDeleteProjectPolicyException() throws Exception {
         Mockito.doThrow(new RuntimeException("err")).when(gdsStore).deleteProjectPolicy(Mockito.anyLong(), Mockito.anyLong());
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.deleteProjectPolicy(1L, 2L));
     }
@@ -672,7 +674,7 @@ public class TestGdsREST {
     @Test
     public void testGetProjectPolicyException() throws Exception {
         when(gdsStore.getProjectPolicy(Mockito.anyLong(), Mockito.anyLong())).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getProjectPolicy(1L, 2L));
     }
@@ -694,7 +696,7 @@ public class TestGdsREST {
     @Test
     public void testGetProjectPoliciesException() {
         when(gdsStore.getProjectPolicies(Mockito.anyLong())).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getProjectPolicies(1L, request));
     }
@@ -717,7 +719,7 @@ public class TestGdsREST {
     @Test
     public void testCreateDataShareException() {
         when(gdsStore.createDataShare(any(RangerGds.RangerDataShare.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.createDataShare(createDataShare()));
     }
@@ -741,7 +743,7 @@ public class TestGdsREST {
     @Test
     public void testUpdateDataShareException() {
         when(gdsStore.updateDataShare(any(RangerGds.RangerDataShare.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.updateDataShare(1L, createDataShare()));
     }
@@ -761,7 +763,7 @@ public class TestGdsREST {
     @Test
     public void testDeleteDataShareException() {
         Mockito.doThrow(new RuntimeException("err")).when(gdsStore).deleteDataShare(Mockito.anyLong(), Mockito.anyBoolean());
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.deleteDataShare(1L, request));
     }
@@ -796,7 +798,7 @@ public class TestGdsREST {
     @Test
     public void testGetDataShareException() throws Exception {
         when(gdsStore.getDataShare(Mockito.anyLong())).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getDataShare(1L));
     }
@@ -807,7 +809,7 @@ public class TestGdsREST {
 
         when(gdsStore.getDataShare(dataShareId)).thenReturn(null);
         when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_NOT_FOUND), anyString(), eq(false)))
-                .thenReturn(new WebApplicationException());
+                .thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getDataShare(dataShareId));
     }
@@ -833,7 +835,7 @@ public class TestGdsREST {
         SearchFilter filter = new SearchFilter();
         when(searchUtil.getSearchFilter(request, dataShareService.sortFields)).thenReturn(filter);
         when(gdsStore.searchDataShares(filter)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.searchDataShares(request));
     }
@@ -859,7 +861,7 @@ public class TestGdsREST {
         SearchFilter filter = new SearchFilter();
         when(searchUtil.getSearchFilter(request, dataShareService.sortFields)).thenReturn(filter);
         when(gdsStore.getDataShareSummary(filter)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getDataShareSummary(request));
     }
@@ -881,7 +883,7 @@ public class TestGdsREST {
     @Test
     public void testAddSharedResourcesException() {
         when(gdsStore.addSharedResources(any(List.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         List<RangerGds.RangerSharedResource> resources = Collections.singletonList(createSharedResource());
         assertThrows(WebApplicationException.class, () -> gdsREST.addSharedResources(resources));
@@ -906,7 +908,7 @@ public class TestGdsREST {
     @Test
     public void testUpdateSharedResourceException() {
         when(gdsStore.updateSharedResource(any(RangerGds.RangerSharedResource.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.updateSharedResource(1L, createSharedResource()));
     }
@@ -925,7 +927,7 @@ public class TestGdsREST {
     @Test
     public void testRemoveSharedResourceException() {
         Mockito.doThrow(new RuntimeException("err")).when(gdsStore).removeSharedResources(any(List.class));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.removeSharedResource(1L));
     }
@@ -944,7 +946,7 @@ public class TestGdsREST {
     @Test
     public void testRemoveSharedResourcesException() {
         Mockito.doThrow(new RuntimeException("err")).when(gdsStore).removeSharedResources(any(List.class));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.removeSharedResources(Collections.singletonList(1L)));
     }
@@ -955,13 +957,20 @@ public class TestGdsREST {
         for (long i = 0; i < 101; i++) {
             resourceIds.add(i);
         }
-        Mockito.when(restErrorUtil.createRESTException(Mockito.anyString())).thenReturn(new WebApplicationException());
+        Mockito.when(restErrorUtil.createRESTException(Mockito.anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.removeSharedResources(resourceIds));
     }
 
     @Test
-    public void testGetSharedResource() {
+    public void testRemoveSharedResourcesNullResourceIds() {
+        Mockito.when(restErrorUtil.createRESTException(Mockito.anyString())).thenThrow(new WebApplicationException());
+
+        assertThrows(WebApplicationException.class, () -> gdsREST.removeSharedResources(null));
+    }
+
+    @Test
+    public void testGetSharedResource() throws Exception {
         Long resourceId = 1L;
         RangerGds.RangerSharedResource expected = createSharedResource();
         expected.setId(resourceId);
@@ -976,20 +985,20 @@ public class TestGdsREST {
     }
 
     @Test
-    public void testGetSharedResourceException() {
+    public void testGetSharedResourceException() throws Exception {
         when(gdsStore.getSharedResource(Mockito.anyLong())).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getSharedResource(1L));
     }
 
     @Test
-    public void testGetSharedResourceNotFound() {
+    public void testGetSharedResourceNotFound() throws Exception {
         Long resourceId = 1L;
 
         when(gdsStore.getSharedResource(resourceId)).thenReturn(null);
         when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_NOT_FOUND), anyString(), eq(false)))
-                .thenReturn(new WebApplicationException());
+                .thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getSharedResource(resourceId));
     }
@@ -1015,7 +1024,7 @@ public class TestGdsREST {
         SearchFilter filter = new SearchFilter();
         when(searchUtil.getSearchFilter(request, sharedResourceService.sortFields)).thenReturn(filter);
         when(gdsStore.searchSharedResources(filter)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.searchSharedResources(request));
     }
@@ -1038,7 +1047,7 @@ public class TestGdsREST {
     @Test
     public void testAddDataShareInDatasetException() throws Exception {
         when(gdsStore.addDataShareInDataset(any(RangerGds.RangerDataShareInDataset.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.addDataShareInDataset(createDataShareInDataset(1L)));
     }
@@ -1062,7 +1071,7 @@ public class TestGdsREST {
     @Test
     public void testUpdateDataShareInDatasetException() {
         when(gdsStore.updateDataShareInDataset(any(RangerGds.RangerDataShareInDataset.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.updateDataShareInDataset(1L, createDataShareInDataset(1L)));
     }
@@ -1081,13 +1090,13 @@ public class TestGdsREST {
     @Test
     public void testRemoveDataShareInDatasetException() {
         Mockito.doThrow(new RuntimeException("err")).when(gdsStore).removeDataShareInDataset(Mockito.anyLong());
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.removeDataShareInDataset(1L));
     }
 
     @Test
-    public void testGetDataShareInDataset() {
+    public void testGetDataShareInDataset() throws Exception {
         Long id = 1L;
         RangerGds.RangerDataShareInDataset expected = createDataShareInDataset(1L);
         expected.setId(id);
@@ -1102,9 +1111,9 @@ public class TestGdsREST {
     }
 
     @Test
-    public void testGetDataShareInDatasetException() {
+    public void testGetDataShareInDatasetException() throws Exception {
         when(gdsStore.getDataShareInDataset(Mockito.anyLong())).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getDataShareInDataset(1L));
     }
@@ -1130,7 +1139,7 @@ public class TestGdsREST {
         SearchFilter filter = new SearchFilter();
         when(searchUtil.getSearchFilter(request, dshidService.sortFields)).thenReturn(filter);
         when(gdsStore.searchDataShareInDatasets(filter)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.searchDataShareInDatasets(request));
     }
@@ -1156,7 +1165,7 @@ public class TestGdsREST {
         SearchFilter filter = new SearchFilter();
         when(searchUtil.getSearchFilter(request, dshidService.sortFields)).thenReturn(filter);
         when(gdsStore.getDshInDsSummary(filter)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.getDshInDsSummary(request));
     }
@@ -1179,7 +1188,7 @@ public class TestGdsREST {
     @Test
     public void testAddDatasetInProjectException() throws Exception {
         when(gdsStore.addDatasetInProject(any(RangerGds.RangerDatasetInProject.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.addDatasetInProject(createDatasetInProject()));
     }
 
@@ -1202,7 +1211,7 @@ public class TestGdsREST {
     @Test
     public void testUpdateDatasetInProjectException() {
         when(gdsStore.updateDatasetInProject(any(RangerGds.RangerDatasetInProject.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.updateDatasetInProject(1L, createDatasetInProject()));
     }
 
@@ -1220,12 +1229,12 @@ public class TestGdsREST {
     @Test
     public void testRemoveDatasetInProjectException() {
         Mockito.doThrow(new RuntimeException("err")).when(gdsStore).removeDatasetInProject(Mockito.anyLong());
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.removeDatasetInProject(1L));
     }
 
     @Test
-    public void testGetDatasetInProject() {
+    public void testGetDatasetInProject() throws Exception {
         Long id = 1L;
         RangerGds.RangerDatasetInProject expected = createDatasetInProject();
         expected.setId(id);
@@ -1240,9 +1249,9 @@ public class TestGdsREST {
     }
 
     @Test
-    public void testGetDatasetInProjectException() {
+    public void testGetDatasetInProjectException() throws Exception {
         when(gdsStore.getDatasetInProject(Mockito.anyLong())).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.getDatasetInProject(1L));
     }
 
@@ -1267,7 +1276,7 @@ public class TestGdsREST {
         SearchFilter filter = new SearchFilter();
         when(searchUtil.getSearchFilter(request, dipService.sortFields)).thenReturn(filter);
         when(gdsStore.searchDatasetInProjects(filter)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.searchDatasetInProjects(request));
     }
 
@@ -1318,7 +1327,7 @@ public class TestGdsREST {
                 Mockito.anyInt(),
                 Mockito.anyString(),
                 Mockito.anyString());
-        when(restErrorUtil.createRESTException(Mockito.anyInt(), Mockito.anyString(), Mockito.anyBoolean())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(Mockito.anyInt(), Mockito.anyString(), Mockito.anyBoolean())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class,
                 () -> gdsREST.getServiceGdsInfoIfUpdated(serviceName, lastKnownVersion, 0L, pluginId, clusterName, pluginCapabilities, request));
@@ -1346,14 +1355,14 @@ public class TestGdsREST {
                 Mockito.anyInt(),
                 Mockito.anyString(),
                 Mockito.anyString());
-        when(restErrorUtil.createRESTException(Mockito.anyInt(), Mockito.anyString(), Mockito.anyBoolean())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(Mockito.anyInt(), Mockito.anyString(), Mockito.anyBoolean())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class,
                 () -> gdsREST.getServiceGdsInfoIfUpdated(serviceName, lastKnownVersion, 0L, pluginId, clusterName, pluginCapabilities, request));
     }
 
     @Test
-    public void testGetSecureServiceGdsInfoIfUpdated() throws Exception {
+    public void testGetSecureServiceGdsInfoIfUpdated_AdminAllowed() throws Exception {
         String serviceName = "testService";
         Long lastKnownVersion = 1L;
         Long lastActivationTime = 0L;
@@ -1364,28 +1373,136 @@ public class TestGdsREST {
         ServiceGdsInfo expected = new ServiceGdsInfo();
         expected.setGdsVersion(2L);
 
-        doNothing().when(bizUtil).failUnauthenticatedDownloadIfNotAllowed();
-        when(serviceUtil.isValidateHttpsAuthentication(serviceName, request)).thenReturn(true);
+        when(serviceUtil.isValidService(serviceName, request)).thenReturn(true);
+        when(bizUtil.isAdmin()).thenReturn(true);
         when(gdsStore.getGdsInfoIfUpdated(serviceName, lastKnownVersion)).thenReturn(expected);
-
-        ServiceGdsInfo result = gdsREST.getSecureServiceGdsInfoIfUpdated(serviceName, lastKnownVersion,
-                lastActivationTime, pluginId, clusterName, pluginCapabilities, request);
+        ServiceGdsInfo result = gdsREST.getSecureServiceGdsInfoIfUpdated(serviceName, lastKnownVersion, lastActivationTime,
+                pluginId, clusterName, pluginCapabilities, request);
 
         assertNotNull(result);
         assertEquals(expected.getGdsVersion(), result.getGdsVersion());
         verify(gdsStore).getGdsInfoIfUpdated(serviceName, lastKnownVersion);
+        verify(serviceDBStore, Mockito.never()).getServiceByName(anyString());
+    }
+
+    @Test
+    public void testGetSecureServiceGdsInfoIfUpdated_NonAdminAllowedViaDownloadList() throws Exception {
+        String        serviceName      = serviceHive;
+        Long          lastKnownVersion = 1L;
+        RangerService rangerService    = new RangerService();
+        rangerService.setId(1L);
+        rangerService.setName(serviceName);
+
+        ServiceGdsInfo expected = new ServiceGdsInfo();
+        expected.setGdsVersion(3L);
+
+        when(serviceUtil.isValidService(serviceName, request)).thenReturn(true);
+        when(bizUtil.isAdmin()).thenReturn(false);
+        when(serviceDBStore.getServiceByName(serviceName)).thenReturn(rangerService);
+        when(bizUtil.isUserAllowed(rangerService, ServiceREST.Allowed_User_List_For_Download)).thenReturn(true);
+        when(gdsStore.getGdsInfoIfUpdated(serviceName, lastKnownVersion)).thenReturn(expected);
+
+        ServiceGdsInfo result = gdsREST.getSecureServiceGdsInfoIfUpdated(serviceName, lastKnownVersion, 0L, "p1", "c1", "caps", request);
+
+        assertNotNull(result);
+        assertEquals(expected.getGdsVersion(), result.getGdsVersion());
+        verify(bizUtil).isUserAllowed(rangerService, ServiceREST.Allowed_User_List_For_Download);
+        verify(bizUtil, Mockito.never()).isUserAllowed(rangerService, ServiceREST.Allowed_User_List_For_Grant_Revoke);
+    }
+
+    @Test
+    public void testGetSecureServiceGdsInfoIfUpdated_NonAdminAllowedViaGrantRevokeList() throws Exception {
+        String        serviceName      = serviceHive;
+        Long          lastKnownVersion = 1L;
+        RangerService rangerService    = new RangerService();
+        rangerService.setId(2L);
+        rangerService.setName(serviceName);
+
+        ServiceGdsInfo expected = new ServiceGdsInfo();
+        expected.setGdsVersion(4L);
+
+        when(serviceUtil.isValidService(serviceName, request)).thenReturn(true);
+        when(bizUtil.isAdmin()).thenReturn(false);
+        when(serviceDBStore.getServiceByName(serviceName)).thenReturn(rangerService);
+        when(bizUtil.isUserAllowed(rangerService, ServiceREST.Allowed_User_List_For_Download)).thenReturn(false);
+        when(bizUtil.isUserAllowed(rangerService, ServiceREST.Allowed_User_List_For_Grant_Revoke)).thenReturn(true);
+        when(gdsStore.getGdsInfoIfUpdated(serviceName, lastKnownVersion)).thenReturn(expected);
+
+        ServiceGdsInfo result = gdsREST.getSecureServiceGdsInfoIfUpdated(serviceName, lastKnownVersion,
+                0L, "p1", "c1", "caps", request);
+
+        assertNotNull(result);
+        assertEquals(expected.getGdsVersion(), result.getGdsVersion());
+        verify(bizUtil).isUserAllowed(rangerService, ServiceREST.Allowed_User_List_For_Download);
+        verify(bizUtil).isUserAllowed(rangerService, ServiceREST.Allowed_User_List_For_Grant_Revoke);
+    }
+
+    @Test
+    public void testGetSecureServiceGdsInfoIfUpdated_NonAdminForbidden() throws Exception {
+        String        serviceName      = serviceHive;
+        Long          lastKnownVersion = 1L;
+        RangerService rangerService    = new RangerService();
+        rangerService.setId(3L);
+        rangerService.setName(serviceName);
+
+        when(serviceUtil.isValidService(serviceName, request)).thenReturn(true);
+        when(bizUtil.isAdmin()).thenReturn(false);
+        when(serviceDBStore.getServiceByName(serviceName)).thenReturn(rangerService);
+        when(bizUtil.isUserAllowed(rangerService, ServiceREST.Allowed_User_List_For_Download)).thenReturn(false);
+        when(bizUtil.isUserAllowed(rangerService, ServiceREST.Allowed_User_List_For_Grant_Revoke)).thenReturn(false);
+        doNothing().when(assetMgr).createPluginInfo(anyString(), anyString(), any(HttpServletRequest.class),
+                anyInt(), any(), any(), anyLong(), anyInt(), anyString(), anyString());
+        when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_FORBIDDEN), anyString(), eq(true)))
+                .thenThrow(new WebApplicationException());
+        assertThrows(WebApplicationException.class, () -> gdsREST.getSecureServiceGdsInfoIfUpdated(serviceName, lastKnownVersion,
+                0L, "p1", "c1", "caps", request));
+        verify(gdsStore, Mockito.never()).getGdsInfoIfUpdated(anyString(), anyLong());
+    }
+
+    @Test
+    public void testGetSecureServiceGdsInfoIfUpdated_ServiceNotFoundForbidden() throws Exception {
+        String serviceName      = "missingSvc";
+        Long   lastKnownVersion = 1L;
+
+        when(serviceUtil.isValidService(serviceName, request)).thenReturn(true);
+        when(bizUtil.isAdmin()).thenReturn(false);
+        when(serviceDBStore.getServiceByName(serviceName)).thenReturn(null);
+        doNothing().when(assetMgr).createPluginInfo(anyString(), anyString(), any(HttpServletRequest.class),
+                anyInt(), any(), any(), anyLong(), anyInt(), anyString(), anyString());
+        when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_FORBIDDEN), anyString(), eq(true)))
+                .thenThrow(new WebApplicationException());
+        assertThrows(WebApplicationException.class, () ->
+                gdsREST.getSecureServiceGdsInfoIfUpdated(serviceName, lastKnownVersion, 0L, "p1", "c1", "caps", request));
+        verify(gdsStore, Mockito.never()).getGdsInfoIfUpdated(anyString(), anyLong());
+    }
+
+    @Test
+    public void testGetSecureServiceGdsInfoIfUpdated_InvalidServiceReturnsNull() throws Exception {
+        String serviceName      = "invalidSvc";
+        Long   lastKnownVersion = 1L;
+
+        when(serviceUtil.isValidService(serviceName, request)).thenReturn(false);
+        doNothing().when(assetMgr).createPluginInfo(anyString(), anyString(), any(HttpServletRequest.class),
+                anyInt(), any(), any(), anyLong(), anyInt(), anyString(), anyString());
+
+        ServiceGdsInfo result = gdsREST.getSecureServiceGdsInfoIfUpdated(serviceName, lastKnownVersion,
+                0L, "p1", "c1", "caps", request);
+
+        assertEquals(null, result);
+        verify(bizUtil, Mockito.never()).isAdmin();
+        verify(gdsStore, Mockito.never()).getGdsInfoIfUpdated(anyString(), anyLong());
     }
 
     @Test
     public void testGetSecureServiceGdsInfoIfUpdatedGenericException() throws Exception {
-        String serviceName = "svc";
-        Long lastKnownVersion = 1L;
-        String pluginId = "p1";
-        String clusterName = "c1";
-        String pluginCapabilities = "caps";
+        String        serviceName      = "svc";
+        Long          lastKnownVersion = 1L;
+        RangerService rangerService    = new RangerService();
+        rangerService.setId(4L);
+        rangerService.setName(serviceName);
 
-        doNothing().when(bizUtil).failUnauthenticatedDownloadIfNotAllowed();
-        when(serviceUtil.isValidateHttpsAuthentication(serviceName, request)).thenReturn(true);
+        when(serviceUtil.isValidService(serviceName, request)).thenReturn(true);
+        when(bizUtil.isAdmin()).thenReturn(true);
         when(gdsStore.getGdsInfoIfUpdated(serviceName, lastKnownVersion)).thenThrow(new RuntimeException("err"));
         doNothing().when(assetMgr).createPluginInfo(
                 Mockito.anyString(),
@@ -1398,10 +1515,10 @@ public class TestGdsREST {
                 Mockito.anyInt(),
                 Mockito.anyString(),
                 Mockito.anyString());
-        when(restErrorUtil.createRESTException(Mockito.anyInt(), Mockito.anyString(), Mockito.anyBoolean())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(Mockito.anyInt(), Mockito.anyString(), Mockito.anyBoolean())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class,
-                () -> gdsREST.getSecureServiceGdsInfoIfUpdated(serviceName, lastKnownVersion, 0L, pluginId, clusterName, pluginCapabilities, request));
+                () -> gdsREST.getSecureServiceGdsInfoIfUpdated(serviceName, lastKnownVersion, 0L, "p1", "c1", "caps", request));
     }
 
     @Test
@@ -1421,7 +1538,7 @@ public class TestGdsREST {
     @Test
     public void testGetDataSetGrantsException() {
         when(gdsStore.getDatasetPolicies(Mockito.anyLong())).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.getDataSetGrants(1L, request));
     }
 
@@ -1462,7 +1579,7 @@ public class TestGdsREST {
         RangerPolicy badPolicy = Mockito.spy(new RangerPolicy());
         Mockito.doReturn(null).when(badPolicy).getPolicyItems();
         when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_BAD_REQUEST), Mockito.<String>any(), eq(true)))
-                .thenReturn(new WebApplicationException());
+                .thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.updatePolicyWithModifiedGrants(badPolicy, Collections.emptyList()));
     }
@@ -1560,6 +1677,7 @@ public class TestGdsREST {
 
         String[] requestedAccessTypes = {"_MANAGE"};
         when(searchUtil.getParamMultiValues(request, "accessType")).thenReturn(requestedAccessTypes);
+        when(searchUtil.getParamMultiValues(request, "principal")).thenReturn(new String[0]);
 
         List<RangerPolicy.RangerPolicyItem> policyItemsByAccessType = new ArrayList<>(gdsREST.filterPolicyItemsByRequest(policy, request));
 
@@ -1602,6 +1720,9 @@ public class TestGdsREST {
 
     @Test
     public void testSearchDataSetsByValidityPeriod() {
+        GdsDBStore gdsDBStore = new GdsDBStore();
+        ReflectionTestUtils.setField(gdsDBStore, "restErrorUtil", restErrorUtil);
+
         List<RangerGds.RangerDataset> rangerDatasets = new ArrayList<>();
 
         RangerGds.RangerDataset rangerDataset1 = createRangerDataSet();
@@ -1875,7 +1996,7 @@ public class TestGdsREST {
         RangerGds.RangerSharedResource resource = createSharedResource();
 
         when(gdsStore.addSharedResources(Mockito.anyList())).thenThrow(new RuntimeException("DB error"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.addSharedResource(resource));
     }
@@ -1963,7 +2084,7 @@ public class TestGdsREST {
 
     @Test
     public void testAddDatasetResourcesServiceNameMissing() {
-        when(restErrorUtil.createRESTException(eq("ServiceName not provided."), eq(MessageEnums.INVALID_INPUT_DATA))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(eq("ServiceName not provided."), eq(MessageEnums.INVALID_INPUT_DATA))).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class,
                 () -> gdsREST.addDatasetResources(1L, "", "", Collections.singletonList(createSharedResource())));
@@ -1977,7 +2098,7 @@ public class TestGdsREST {
         rangerService.setIsEnabled(false);
 
         when(serviceDBStore.getServiceByName(serviceNm)).thenReturn(rangerService);
-        when(restErrorUtil.createRESTException(eq("Unauthorized access."), eq(MessageEnums.OPER_NOT_ALLOWED_FOR_STATE))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(eq("Unauthorized access."), eq(MessageEnums.OPER_NOT_ALLOWED_FOR_STATE))).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class,
                 () -> gdsREST.addDatasetResources(1L, serviceNm, "", Collections.singletonList(createSharedResource())));
@@ -1993,7 +2114,7 @@ public class TestGdsREST {
 
         when(serviceDBStore.getServiceByName(serviceNm)).thenReturn(rangerService);
         Mockito.doThrow(new RuntimeException("Zone not found")).when(serviceDBStore).getSecurityZone(zoneName);
-        when(restErrorUtil.createRESTException(Mockito.anyString(), eq(MessageEnums.DATA_NOT_FOUND))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(Mockito.anyString(), eq(MessageEnums.DATA_NOT_FOUND))).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class,
                 () -> gdsREST.addDatasetResources(1L, serviceNm, zoneName, Collections.singletonList(createSharedResource())));
@@ -2004,7 +2125,7 @@ public class TestGdsREST {
         String serviceNm = "svc-missing";
 
         Mockito.doThrow(new Exception("Service not found")).when(serviceDBStore).getServiceByName(serviceNm);
-        when(restErrorUtil.createRESTException(Mockito.anyString(), eq(MessageEnums.DATA_NOT_FOUND))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(Mockito.anyString(), eq(MessageEnums.DATA_NOT_FOUND))).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class,
                 () -> gdsREST.addDatasetResources(1L, serviceNm, "", Collections.singletonList(createSharedResource())));
@@ -2016,7 +2137,7 @@ public class TestGdsREST {
 
         Mockito.doThrow(new Exception("Service missing")).when(serviceDBStore).getServiceByName(serviceNm);
         when(restErrorUtil.createRESTException(Mockito.anyString(), eq(MessageEnums.DATA_NOT_FOUND)))
-                .thenReturn(new WebApplicationException());
+                .thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class,
                 () -> gdsREST.addDatasetResources(1L, serviceNm, "", Collections.singletonList(createSharedResource())));
@@ -2062,7 +2183,7 @@ public class TestGdsREST {
     @Test
     public void testAddDataSharesInDatasetEmptyList() {
         when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_BAD_REQUEST), anyString(), eq(false)))
-                .thenReturn(new WebApplicationException());
+                .thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class,
                 () -> gdsREST.addDataSharesInDataset(1L, Collections.emptyList()));
@@ -2079,7 +2200,7 @@ public class TestGdsREST {
 
         when(serviceDBStore.getServiceByName(serviceNm)).thenReturn(rangerService);
         when(gdsStore.getDataset(datasetId)).thenThrow(new RuntimeException("boom"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class,
                 () -> gdsREST.addDatasetResources(datasetId, serviceNm, "", Collections.singletonList(createSharedResource())));
@@ -2132,7 +2253,7 @@ public class TestGdsREST {
     public void testValidateAndGetZoneId_notFoundException() throws Exception {
         String zoneName = "zoneY";
         when(serviceDBStore.getSecurityZone(zoneName)).thenThrow(new RuntimeException("not found"));
-        when(restErrorUtil.createRESTException(anyString(), eq(MessageEnums.DATA_NOT_FOUND))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString(), eq(MessageEnums.DATA_NOT_FOUND))).thenThrow(new WebApplicationException());
 
         Method m = GdsREST.class.getDeclaredMethod("validateAndGetZoneId", String.class);
         m.setAccessible(true);
@@ -2150,7 +2271,7 @@ public class TestGdsREST {
         String zoneName = "zoneZ";
 
         when(serviceDBStore.getSecurityZone(zoneName)).thenThrow(new RuntimeException("no zone"));
-        when(restErrorUtil.createRESTException(anyString(), eq(MessageEnums.DATA_NOT_FOUND))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString(), eq(MessageEnums.DATA_NOT_FOUND))).thenThrow(new WebApplicationException());
 
         Method m = GdsREST.class.getDeclaredMethod("validateAndGetZoneId", String.class);
         m.setAccessible(true);
@@ -2167,7 +2288,7 @@ public class TestGdsREST {
     public void testValidateAndGetServiceId_nullName() throws Exception {
         Method m = GdsREST.class.getDeclaredMethod("validateAndGetServiceId", String.class);
         m.setAccessible(true);
-        when(restErrorUtil.createRESTException(eq("ServiceName not provided."), eq(MessageEnums.INVALID_INPUT_DATA))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(eq("ServiceName not provided."), eq(MessageEnums.INVALID_INPUT_DATA))).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> {
             try {
@@ -2196,7 +2317,7 @@ public class TestGdsREST {
     public void testValidateAndGetServiceId_serviceThrows() throws Exception {
         String serviceNm = "svcY";
         when(serviceDBStore.getServiceByName(serviceNm)).thenThrow(new RuntimeException("no svc"));
-        when(restErrorUtil.createRESTException(eq("Service:" + serviceNm + " not found"), eq(MessageEnums.DATA_NOT_FOUND))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(eq("Service:" + serviceNm + " not found"), eq(MessageEnums.DATA_NOT_FOUND))).thenThrow(new WebApplicationException());
 
         Method m = GdsREST.class.getDeclaredMethod("validateAndGetServiceId", String.class);
         m.setAccessible(true);
@@ -2214,7 +2335,7 @@ public class TestGdsREST {
         String serviceNm = "svcZ";
 
         when(serviceDBStore.getServiceByName(serviceNm)).thenThrow(new RuntimeException("no svc"));
-        when(restErrorUtil.createRESTException(eq("Service:" + serviceNm + " not found"), eq(MessageEnums.DATA_NOT_FOUND))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(eq("Service:" + serviceNm + " not found"), eq(MessageEnums.DATA_NOT_FOUND))).thenThrow(new WebApplicationException());
 
         Method m = GdsREST.class.getDeclaredMethod("validateAndGetServiceId", String.class);
         m.setAccessible(true);
@@ -2234,7 +2355,7 @@ public class TestGdsREST {
         svc.setId(100L);
         svc.setIsEnabled(false);
         when(serviceDBStore.getServiceByName(serviceNm)).thenReturn(svc);
-        when(restErrorUtil.createRESTException(eq("Unauthorized access."), eq(MessageEnums.OPER_NOT_ALLOWED_FOR_STATE))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(eq("Unauthorized access."), eq(MessageEnums.OPER_NOT_ALLOWED_FOR_STATE))).thenThrow(new WebApplicationException());
 
         Method m = GdsREST.class.getDeclaredMethod("validateAndGetServiceId", String.class);
         m.setAccessible(true);
@@ -2272,7 +2393,7 @@ public class TestGdsREST {
         SearchFilter filter = new SearchFilter();
         when(searchUtil.getSearchFilter(request, datasetService.sortFields)).thenReturn(filter);
         when(gdsStore.getProjectNames(filter)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.listProjectNames(request));
     }
@@ -2282,7 +2403,7 @@ public class TestGdsREST {
         SearchFilter filter = new SearchFilter();
         when(searchUtil.getSearchFilter(request, datasetService.sortFields)).thenReturn(filter);
         when(gdsStore.getDatasetNames(filter)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () -> gdsREST.listDatasetNames(request));
     }
@@ -2299,7 +2420,7 @@ public class TestGdsREST {
         when(serviceUtil.isValidateHttpsAuthentication(serviceName, request)).thenReturn(true);
         when(gdsStore.getGdsInfoIfUpdated(serviceName, lastKnownVersion)).thenReturn(null);
         doNothing().when(assetMgr).createPluginInfo(anyString(), anyString(), any(HttpServletRequest.class), anyInt(), any(), any(), anyLong(), anyInt(), anyString(), anyString());
-        when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_NOT_MODIFIED), anyString(), eq(false))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_NOT_MODIFIED), anyString(), eq(false))).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () ->
                 gdsREST.getServiceGdsInfoIfUpdated(serviceName, lastKnownVersion, 0L, pluginId, clusterName, pluginCapabilities, request));
@@ -2315,19 +2436,19 @@ public class TestGdsREST {
         doNothing().when(assetMgr).createPluginInfo(anyString(), anyString(), any(HttpServletRequest.class), anyInt(), any(), any(), anyLong(), anyInt(), anyString(), anyString());
 
         ServiceGdsInfo result = gdsREST.getServiceGdsInfoIfUpdated(serviceName, lastKnownVersion, 0L, "p1", "c1", "caps", request);
-        assertEquals(null, result);
+        assertNull(result);
     }
 
     @Test
     public void testGetSecureServiceGdsInfoIfUpdated_NotModified() throws Exception {
         String serviceName = "svc-secure-nomod";
-        Long lastKnownVersion = 7L;
+        Long   lastKnownVersion = 7L;
 
-        doNothing().when(bizUtil).failUnauthenticatedDownloadIfNotAllowed();
-        when(serviceUtil.isValidateHttpsAuthentication(serviceName, request)).thenReturn(true);
+        when(serviceUtil.isValidService(serviceName, request)).thenReturn(true);
+        when(bizUtil.isAdmin()).thenReturn(true);
         when(gdsStore.getGdsInfoIfUpdated(serviceName, lastKnownVersion)).thenReturn(null);
         doNothing().when(assetMgr).createPluginInfo(anyString(), anyString(), any(HttpServletRequest.class), anyInt(), any(), any(), anyLong(), anyInt(), anyString(), anyString());
-        when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_NOT_MODIFIED), anyString(), eq(false))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_NOT_MODIFIED), anyString(), eq(false))).thenThrow(new WebApplicationException());
 
         assertThrows(WebApplicationException.class, () ->
                 gdsREST.getSecureServiceGdsInfoIfUpdated(serviceName, lastKnownVersion, 0L, "p1", "c1", "caps", request));
@@ -2373,7 +2494,7 @@ public class TestGdsREST {
         existing.setPolicyItems(policy.getPolicyItems());
 
         when(gdsStore.getDatasetPolicies(datasetId)).thenReturn(Collections.singletonList(existing));
-        when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_NOT_MODIFIED), anyString(), eq(false))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_NOT_MODIFIED), anyString(), eq(false))).thenThrow(new WebApplicationException());
 
         List<RangerGrant> grants = Collections.singletonList(new RangerGrant(new RangerPrincipal(RangerPrincipal.PrincipalType.USER, "nouser"), Collections.emptyList(), Collections.emptyList()));
 
@@ -2388,7 +2509,7 @@ public class TestGdsREST {
         item.setDataShareId(2L);
         item.setStatus(RangerGds.GdsShareStatus.ACTIVE);
         when(restErrorUtil.createRESTException(eq(HttpServletResponse.SC_BAD_REQUEST), anyString(), eq(false)))
-                .thenReturn(new WebApplicationException());
+                .thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.addDataSharesInDataset(datasetId, Arrays.asList(item)));
     }
 
@@ -2397,7 +2518,7 @@ public class TestGdsREST {
         Long datasetId = 1L;
         RangerGds.RangerDataShareInDataset item = createDataShareInDataset(datasetId);
         when(gdsStore.addDataSharesInDataset(Mockito.anyList())).thenThrow(new RuntimeException("boom"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.addDataSharesInDataset(datasetId, Arrays.asList(item)));
     }
 
@@ -2406,7 +2527,7 @@ public class TestGdsREST {
         SearchFilter filter = new SearchFilter();
         when(searchUtil.getSearchFilter(request, datasetService.sortFields)).thenReturn(filter);
         when(gdsStore.getDatasetSummary(filter)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.getDatasetSummary(request));
     }
 
@@ -2415,7 +2536,7 @@ public class TestGdsREST {
         SearchFilter filter = new SearchFilter();
         when(searchUtil.getSearchFilter(request, datasetService.sortFields)).thenReturn(filter);
         when(gdsStore.getEnhancedDatasetSummary(filter)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.getEnhancedDatasetSummary(request));
     }
 
@@ -2424,7 +2545,7 @@ public class TestGdsREST {
         Long projectId = 123L;
         RangerPolicy policy = createPolicy();
         when(gdsStore.addProjectPolicy(projectId, policy)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.addProjectPolicy(projectId, policy));
     }
 
@@ -2434,7 +2555,7 @@ public class TestGdsREST {
         Long policyId = 999L;
         RangerPolicy policy = createPolicy();
         when(gdsStore.updateProjectPolicy(eq(projectId), any(RangerPolicy.class))).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.updateProjectPolicy(projectId, policyId, policy));
     }
 
@@ -2444,7 +2565,7 @@ public class TestGdsREST {
         for (int i = 0; i < 101; i++) {
             resources.add(createSharedResource());
         }
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.addSharedResources(resources));
     }
 
@@ -2452,7 +2573,7 @@ public class TestGdsREST {
     public void testUpdateDataSetGrants_GenericException2() {
         Long datasetId = 77L;
         when(gdsStore.getDatasetPolicies(datasetId)).thenThrow(new RuntimeException("err"));
-        when(restErrorUtil.createRESTException(anyString())).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(anyString())).thenThrow(new WebApplicationException());
         assertThrows(WebApplicationException.class, () -> gdsREST.updateDataSetGrants(datasetId, Collections.emptyList()));
     }
 
@@ -2460,7 +2581,7 @@ public class TestGdsREST {
     public void testValidateAndGetServiceId_serviceNull404() throws Exception {
         String serviceNm = "svcNull";
         when(serviceDBStore.getServiceByName(serviceNm)).thenThrow(new RuntimeException("no svc"));
-        when(restErrorUtil.createRESTException(eq("Service:" + serviceNm + " not found"), eq(MessageEnums.DATA_NOT_FOUND))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(eq("Service:" + serviceNm + " not found"), eq(MessageEnums.DATA_NOT_FOUND))).thenThrow(new WebApplicationException());
         Method m = GdsREST.class.getDeclaredMethod("validateAndGetServiceId", String.class);
         m.setAccessible(true);
         assertThrows(WebApplicationException.class, () -> {
@@ -2476,7 +2597,7 @@ public class TestGdsREST {
     public void testValidateAndGetZoneId_zoneNull404() throws Exception {
         String zoneName = "zoneNull";
         when(serviceDBStore.getSecurityZone(zoneName)).thenThrow(new RuntimeException("no zone"));
-        when(restErrorUtil.createRESTException(eq("Zone:" + zoneName + " not found"), eq(MessageEnums.DATA_NOT_FOUND))).thenReturn(new WebApplicationException());
+        when(restErrorUtil.createRESTException(eq("Zone:" + zoneName + " not found"), eq(MessageEnums.DATA_NOT_FOUND))).thenThrow(new WebApplicationException());
         Method m = GdsREST.class.getDeclaredMethod("validateAndGetZoneId", String.class);
         m.setAccessible(true);
         assertThrows(WebApplicationException.class, () -> {

@@ -1292,32 +1292,36 @@ public class GdsREST {
     @DELETE
     @Path("/resources")
     @PreAuthorize("@rangerPreAuthSecurityHandler.isAPIAccessible(\"" + RangerAPIList.REMOVE_SHARED_RESOURCES + "\")")
-    public void removeSharedResources(List<Long> resourceIds) {
-        LOG.debug("==> GdsREST.removeSharedResources({})", resourceIds);
+    public void removeSharedResources(@QueryParam("id") List<Long> id) {
+        LOG.debug("==> GdsREST.removeSharedResources(resourceIds={})", id);
 
         RangerPerfTracer perf = null;
 
         try {
-            if (resourceIds.size() > SHARED_RESOURCES_MAX_BATCH_SIZE) {
+            if (id == null) {
+                throw new Exception("resourceIds must not be null");
+            }
+
+            if (id.size() > SHARED_RESOURCES_MAX_BATCH_SIZE) {
                 throw new Exception("removeSharedResources batch size exceeded the configured limit: Maximum allowed is " + SHARED_RESOURCES_MAX_BATCH_SIZE);
             }
 
             if (RangerPerfTracer.isPerfTraceEnabled(PERF_LOG)) {
-                perf = RangerPerfTracer.getPerfTracer(PERF_LOG, "GdsREST.removeSharedResources(" + resourceIds + ")");
+                perf = RangerPerfTracer.getPerfTracer(PERF_LOG, "GdsREST.removeSharedResources(" + id + ")");
             }
 
-            gdsStore.removeSharedResources(resourceIds);
+            gdsStore.removeSharedResources(id);
         } catch (WebApplicationException excp) {
             throw excp;
         } catch (Throwable excp) {
-            LOG.error("removeSharedResources({}) failed", resourceIds, excp);
+            LOG.error("removeSharedResources({}) failed", id, excp);
 
             throw restErrorUtil.createRESTException(excp.getMessage());
         } finally {
             RangerPerfTracer.log(perf);
         }
 
-        LOG.debug("<== GdsREST.removeSharedResources({})", resourceIds);
+        LOG.debug("<== GdsREST.removeSharedResources(resourceIds={})", id);
     }
 
     @GET
@@ -1783,21 +1787,37 @@ public class GdsREST {
         int            httpCode          = HttpServletResponse.SC_OK;
         Long           downloadedVersion = null;
         String         logMsg            = null;
+        boolean        isAllowed         = false;
 
         try {
-            bizUtil.failUnauthenticatedDownloadIfNotAllowed();
-
-            boolean isValid = serviceUtil.isValidateHttpsAuthentication(serviceName, request);
+            boolean isValid = serviceUtil.isValidService(serviceName, request);
 
             if (isValid) {
-                ret = gdsStore.getGdsInfoIfUpdated(serviceName, lastKnownVersion);
-
-                if (ret == null) {
-                    downloadedVersion = lastKnownVersion;
-                    httpCode          = HttpServletResponse.SC_NOT_MODIFIED;
-                    logMsg            = "No change since last update";
+                if (bizUtil.isAdmin()) {
+                    isAllowed = true;
                 } else {
-                    downloadedVersion = ret.getGdsVersion();
+                    RangerService rangerService = serviceDBStore.getServiceByName(serviceName);
+                    if (rangerService != null) {
+                        isAllowed = bizUtil.isUserAllowed(rangerService, ServiceREST.Allowed_User_List_For_Download);
+                        if (!isAllowed) {
+                            isAllowed = bizUtil.isUserAllowed(rangerService, ServiceREST.Allowed_User_List_For_Grant_Revoke);
+                        }
+                    }
+                }
+                if (isAllowed) {
+                    ret = gdsStore.getGdsInfoIfUpdated(serviceName, lastKnownVersion);
+                    if (ret == null) {
+                        downloadedVersion = lastKnownVersion;
+                        httpCode          = HttpServletResponse.SC_NOT_MODIFIED;
+                        logMsg            = "No change since last update";
+                    } else {
+                        downloadedVersion = ret.getGdsVersion();
+                    }
+                } else {
+                    LOG.error("GdsREST.getSecureServiceGdsInfoIfUpdated(serviceName={}) failed as User doesn't have permission to download GDS data", serviceName);
+
+                    httpCode = HttpServletResponse.SC_FORBIDDEN;
+                    logMsg   = "User doesn't have permission to download GDS data";
                 }
             }
         } catch (WebApplicationException webException) {

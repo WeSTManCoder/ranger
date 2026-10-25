@@ -93,7 +93,7 @@ export default function ResourceSelectComp(props) {
         toastId.current = toast.error(error.response.data.msgDesc);
       } else {
         toastId.current = toast.error(
-          "Resouce lookup failed for current resource"
+          "Resource lookup failed for current resource"
         );
       }
     }
@@ -167,11 +167,12 @@ export default function ResourceSelectComp(props) {
 
   return (
     <Field
-      key={formValues[`resourceName-${levelKey}`].name}
+      key={isMultiResources ? `${name}-value-${levelKey}` : `value-${levelKey}`}
       className="form-control"
       name={
         isMultiResources ? `${name}.value-${levelKey}` : `value-${levelKey}`
       }
+      initialValue={formValues?.[`value-${levelKey}`] || []}
       validate={
         formValues &&
         formValues[`resourceName-${levelKey}`]?.mandatory &&
@@ -216,6 +217,24 @@ export default function ResourceSelectComp(props) {
             filterOption={customFilterOptions}
             isLoading={isLoading}
             styles={selectInputCustomStyles}
+            formatCreateLabel={(inputValue) => `Create "${inputValue.trim()}"`}
+            onCreateOption={(inputValue) => {
+              const trimmedValue = inputValue.trim();
+              if (trimmedValue) {
+                const newOption = { label: trimmedValue, value: trimmedValue };
+                const currentValue = input.value || [];
+                const newValue = supportMultipleVal(
+                  formValues[`resourceName-${levelKey}`]
+                )
+                  ? isArray(currentValue)
+                    ? [...currentValue, newOption]
+                    : [newOption]
+                  : [newOption];
+                input.onChange(newValue);
+              }
+            }}
+            tabSelectsValue={false}
+            placeholder="Add policy Resources"
           />
           {formValues &&
             formValues[`resourceName-${levelKey}`]?.mandatory &&

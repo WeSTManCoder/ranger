@@ -38,7 +38,6 @@ import org.apache.ranger.common.UserSessionBase;
 import org.apache.ranger.common.annotation.RangerAnnotationClassName;
 import org.apache.ranger.common.annotation.RangerAnnotationJSMgrName;
 import org.apache.ranger.db.RangerDaoManager;
-import org.apache.ranger.entity.XXGroup;
 import org.apache.ranger.entity.XXService;
 import org.apache.ranger.entity.XXServiceDef;
 import org.apache.ranger.plugin.model.RangerPluginInfo;
@@ -439,8 +438,8 @@ public class XUserREST {
         if (userSession != null && userSession.getLoginId() != null) {
             VXUser loggedInVXUser = xUserService.getXUserByUserName(userSession.getLoginId());
 
-            if (loggedInVXUser != null && loggedInVXUser.getUserRoleList().size() == 1) {
-                if (loggedInVXUser.getUserRoleList().contains(RangerConstants.ROLE_SYS_ADMIN) || loggedInVXUser.getUserRoleList().contains(RangerConstants.ROLE_ADMIN_AUDITOR)) {
+            if (loggedInVXUser != null && (userSession.isSuperUser() || loggedInVXUser.getUserRoleList().size() == 1)) {
+                if (userSession.isSuperUser() || loggedInVXUser.getUserRoleList().contains(RangerConstants.ROLE_SYS_ADMIN) || loggedInVXUser.getUserRoleList().contains(RangerConstants.ROLE_ADMIN_AUDITOR)) {
                     boolean hasRole = false;
 
                     hasRole = !userRolesList.contains(RangerConstants.ROLE_SYS_ADMIN) ? userRolesList.add(RangerConstants.ROLE_SYS_ADMIN) : hasRole;
@@ -457,9 +456,9 @@ public class XUserREST {
                     hasRole = !userRolesList.contains(RangerConstants.ROLE_KEY_ADMIN) ? userRolesList.add(RangerConstants.ROLE_KEY_ADMIN) : hasRole;
                     hasRole = !userRolesList.contains(RangerConstants.ROLE_KEY_ADMIN_AUDITOR) ? userRolesList.add(RangerConstants.ROLE_KEY_ADMIN_AUDITOR) : hasRole;
                     hasRole = !userRolesList.contains(RangerConstants.ROLE_USER) ? userRolesList.add(RangerConstants.ROLE_USER) : hasRole;
-                } else if (loggedInVXUser.getUserRoleList().contains(RangerConstants.ROLE_USER)) {
-                    if ((CollectionUtils.isNotEmpty(userRolesList) && (userRolesList.size() != 1 || !userRolesList.contains(RangerConstants.ROLE_USER)))
-                            || (userRole != null && !RangerConstants.ROLE_USER.equals(userRole))) {
+                } else if (userSession.isSingleRoleUserSession()) {
+                    // Plain ROLE_USER self-search only; config super-users use full search below.
+                    if ((CollectionUtils.isNotEmpty(userRolesList) && !userRolesList.contains(RangerConstants.ROLE_USER)) || (userRole != null && !RangerConstants.ROLE_USER.equals(userRole))) {
                         throw restErrorUtil.create403RESTException("Logged-In user is not allowed to access requested user data.");
                     }
 
@@ -855,29 +854,8 @@ public class XUserREST {
     @PreAuthorize("@rangerPreAuthSecurityHandler.isAPIAccessible(\"" + RangerAPIList.GET_X_GROUP_BY_GROUP_NAME + "\")")
     public VXGroup getXGroupByGroupName(@Context HttpServletRequest request, @PathParam("groupName") String groupName) {
         VXGroup         vXGroup     = xGroupService.getGroupByGroupName(groupName);
-        UserSessionBase userSession = ContextUtil.getCurrentUserSession();
-
-        if (userSession != null && userSession.getLoginId() != null && userSession.getUserRoleList().contains(RangerConstants.ROLE_USER)) {
-            VXUser  loggedInVXUser = xUserService.getXUserByUserName(userSession.getLoginId());
-            boolean isMatch        = false;
-
-            if (loggedInVXUser != null && vXGroup != null) {
-                List<XXGroup> userGroups = xGroupService.getGroupsByUserId(loggedInVXUser.getId());
-
-                for (XXGroup xXGroup : userGroups) {
-                    if (xXGroup != null && StringUtils.equals(xXGroup.getName(), vXGroup.getName())) {
-                        isMatch = true;
-                        break;
-                    }
-                }
-            }
-
-            if (!isMatch) {
-                vXGroup = null;
-            }
-        }
-
-        return vXGroup;
+        Long id = vXGroup.getId();
+        return xUserMgr.getXGroup(id);
     }
 
     @DELETE
@@ -1466,7 +1444,7 @@ public class XUserREST {
         boolean         isKeyAdmin        = bizUtil.isKeyAdmin();
         Long            downloadedVersion = null;
         boolean         isValid           = false;
-        boolean         isAllowed;
+        boolean         isAllowed         = false;
 
         try {
             isValid = serviceUtil.isValidService(serviceName, request);
@@ -1487,18 +1465,22 @@ public class XUserREST {
 
             if (isValid && xService != null) {
                 XXServiceDef  xServiceDef   = rangerDaoManager.getXXServiceDef().getById(xService.getType());
-                RangerService rangerService = svcStore.getServiceByName(serviceName);
+                RangerService rangerService;
 
                 if (StringUtils.equals(xServiceDef.getImplclassname(), EmbeddedServiceDefsUtil.KMS_IMPL_CLASS_NAME)) {
+                    rangerService = svcStore.getServiceByNameForDP(serviceName);
+
                     if (isKeyAdmin) {
                         isAllowed = true;
-                    } else {
+                    } else if (rangerService != null) {
                         isAllowed = bizUtil.isUserAllowed(rangerService, USERSTORE_DOWNLOAD_USERS);
                     }
                 } else {
+                    rangerService = svcStore.getServiceByName(serviceName);
+
                     if (isAdmin) {
                         isAllowed = true;
-                    } else {
+                    } else if (rangerService != null) {
                         isAllowed = bizUtil.isUserAllowed(rangerService, USERSTORE_DOWNLOAD_USERS);
                     }
                 }

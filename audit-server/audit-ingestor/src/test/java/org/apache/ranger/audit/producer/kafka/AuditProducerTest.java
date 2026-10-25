@@ -1,0 +1,167 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+package org.apache.ranger.audit.producer.kafka;
+
+import org.apache.kafka.clients.CommonClientConfigs;
+import org.apache.kafka.clients.producer.ProducerConfig;
+import org.apache.kafka.common.config.SaslConfigs;
+import org.apache.ranger.audit.server.AuditServerConstants;
+import org.apache.ranger.kafka.auth.RangerKafkaClientSecurityConfig;
+import org.apache.ranger.kafka.auth.RangerKafkaOAuthBearerLoginCallbackHandler;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Properties;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+
+public class AuditProducerTest {
+    private static final String PROP_PREFIX = AuditServerConstants.PROP_PREFIX_AUDIT_SERVER + "kafka";
+
+    @TempDir
+    Path tempDir;
+
+    private static void assertProducerProp(Properties props, String key, Object expected) {
+        assertEquals(String.valueOf(expected), String.valueOf(props.get(key)));
+    }
+
+    @Test
+    public void testCreateProducerConfigDefaults() throws Exception {
+        Properties props = new Properties();
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_BOOTSTRAP_SERVERS, "kafka:9092");
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_SECURITY_PROTOCOL, "PLAINTEXT");
+
+        Properties producerProps = AuditProducer.createProducerConfig(props, PROP_PREFIX);
+
+        assertEquals("kafka:9092", producerProps.get(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG));
+        assertEquals("true", producerProps.get(ProducerConfig.ENABLE_IDEMPOTENCE_CONFIG));
+        assertEquals("all", producerProps.get(ProducerConfig.ACKS_CONFIG));
+        assertProducerProp(producerProps, ProducerConfig.BATCH_SIZE_CONFIG, AuditServerConstants.DEFAULT_PRODUCER_BATCH_SIZE);
+        assertProducerProp(producerProps, ProducerConfig.LINGER_MS_CONFIG, AuditServerConstants.DEFAULT_PRODUCER_LINGER_MS);
+        assertProducerProp(producerProps, ProducerConfig.BUFFER_MEMORY_CONFIG, AuditServerConstants.DEFAULT_PRODUCER_BUFFER_MEMORY);
+        assertEquals(AuditServerConstants.DEFAULT_PRODUCER_COMPRESSION_TYPE,
+                producerProps.get(ProducerConfig.COMPRESSION_TYPE_CONFIG));
+        assertProducerProp(producerProps, ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, AuditServerConstants.DEFAULT_PRODUCER_DELIVERY_TIMEOUT_MS);
+        assertProducerProp(producerProps, ProducerConfig.MAX_REQUEST_SIZE_CONFIG, AuditServerConstants.DEFAULT_PRODUCER_MAX_REQUEST_SIZE);
+        assertProducerProp(producerProps, ProducerConfig.MAX_BLOCK_MS_CONFIG, AuditServerConstants.DEFAULT_PRODUCER_MAX_BLOCK_MS);
+        assertProducerProp(producerProps, ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, AuditServerConstants.DEFAULT_PRODUCER_REQUEST_TIMEOUT_MS);
+        assertEquals("PLAINTEXT", producerProps.get(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG));
+        assertFalse(producerProps.containsKey(SaslConfigs.SASL_MECHANISM));
+        assertFalse(producerProps.containsKey(SaslConfigs.SASL_JAAS_CONFIG));
+        assertFalse(producerProps.containsKey(ProducerConfig.PARTITIONER_CLASS_CONFIG));
+    }
+
+    @Test
+    public void testCreateProducerConfigSaslDefaultGssapiKeytabLoginRequiresKeytab() {
+        Properties props = new Properties();
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_BOOTSTRAP_SERVERS, "kafka:9092");
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_SECURITY_PROTOCOL, "SASL_PLAINTEXT");
+        props.setProperty(PROP_PREFIX + "." + RangerKafkaClientSecurityConfig.PROP_JAAS_OPTION_PREFIX + "useKeyTab", "true");
+
+        assertThrows(IllegalStateException.class, () -> AuditProducer.createProducerConfig(props, PROP_PREFIX));
+    }
+
+    @Test
+    public void testCreateProducerConfigSaslDefaultGssapiKeytab() throws Exception {
+        Path       keytab = Files.createFile(tempDir.resolve("ranger.keytab"));
+        Properties props  = new Properties();
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_BOOTSTRAP_SERVERS, "kafka:9092");
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_SECURITY_PROTOCOL, "SASL_PLAINTEXT");
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_AUDIT_SERVICE_PRINCIPAL, "rangerauditserver@EXAMPLE.COM");
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_AUDIT_SERVICE_KEYTAB, keytab.toString());
+        props.setProperty(PROP_PREFIX + "." + RangerKafkaClientSecurityConfig.PROP_JAAS_OPTION_PREFIX + "useKeyTab", "true");
+        props.setProperty(PROP_PREFIX + "." + RangerKafkaClientSecurityConfig.PROP_JAAS_OPTION_PREFIX + "storeKey", "true");
+        props.setProperty(PROP_PREFIX + "." + RangerKafkaClientSecurityConfig.PROP_JAAS_OPTION_PREFIX + "useTicketCache", "false");
+
+        Properties producerProps = AuditProducer.createProducerConfig(props, PROP_PREFIX);
+
+        assertEquals("GSSAPI", producerProps.get(SaslConfigs.SASL_MECHANISM));
+        assertEquals("kafka", producerProps.get(SaslConfigs.SASL_KERBEROS_SERVICE_NAME));
+        assertEquals(RangerKafkaClientSecurityConfig.KRB5_LOGIN_MODULE + " required keyTab=\"" + keytab + "\" serviceName=\"kafka\" principal=\"rangerauditserver@EXAMPLE.COM\" storeKey=\"true\" useKeyTab=\"true\" useTicketCache=\"false\";",
+                producerProps.get(SaslConfigs.SASL_JAAS_CONFIG));
+    }
+
+    @Test
+    public void testCreateProducerConfigSaslOAuthBearerFileToken() throws Exception {
+        Path       token = Files.createFile(tempDir.resolve("kafka-token"));
+        Properties props = new Properties();
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_BOOTSTRAP_SERVERS, "kafka:9093");
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_SECURITY_PROTOCOL, "SASL_SSL");
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_SASL_MECHANISM, "OAUTHBEARER");
+        props.setProperty(PROP_PREFIX + "." + RangerKafkaClientSecurityConfig.PROP_OAUTH_TOKEN_ENDPOINT_URL, token.toUri().toString());
+
+        Properties producerProps = AuditProducer.createProducerConfig(props, PROP_PREFIX);
+
+        assertEquals("SASL_SSL", producerProps.get(CommonClientConfigs.SECURITY_PROTOCOL_CONFIG));
+        assertEquals("OAUTHBEARER", producerProps.get(SaslConfigs.SASL_MECHANISM));
+        assertEquals(RangerKafkaClientSecurityConfig.OAUTHBEARER_LOGIN_MODULE + " required;", producerProps.get(SaslConfigs.SASL_JAAS_CONFIG));
+        assertEquals(token.toUri().toString(), producerProps.get(SaslConfigs.SASL_OAUTHBEARER_TOKEN_ENDPOINT_URL));
+        assertEquals(RangerKafkaOAuthBearerLoginCallbackHandler.class.getName(), producerProps.get(SaslConfigs.SASL_LOGIN_CALLBACK_HANDLER_CLASS));
+        assertFalse(producerProps.containsKey(SaslConfigs.SASL_KERBEROS_SERVICE_NAME));
+    }
+
+    @Test
+    public void testCreateProducerConfigCustomTuning() throws Exception {
+        Properties props = new Properties();
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_BOOTSTRAP_SERVERS, "broker1:9092,broker2:9092");
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_SECURITY_PROTOCOL, "PLAINTEXT");
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_REQ_TIMEOUT_MS, "45000");
+
+        String producerPrefix = PROP_PREFIX + "." + AuditServerConstants.PROP_KAFKA_PRODUCER_PREFIX;
+        props.setProperty(producerPrefix + AuditServerConstants.PROP_PRODUCER_BATCH_SIZE, "262144");
+        props.setProperty(producerPrefix + AuditServerConstants.PROP_PRODUCER_LINGER_MS, "50");
+        props.setProperty(producerPrefix + AuditServerConstants.PROP_PRODUCER_BUFFER_MEMORY, "268435456");
+        props.setProperty(producerPrefix + AuditServerConstants.PROP_PRODUCER_COMPRESSION_TYPE, "snappy");
+        props.setProperty(producerPrefix + AuditServerConstants.PROP_PRODUCER_DELIVERY_TIMEOUT_MS, "180000");
+        props.setProperty(producerPrefix + AuditServerConstants.PROP_PRODUCER_MAX_REQUEST_SIZE, "2097152");
+        props.setProperty(producerPrefix + AuditServerConstants.PROP_PRODUCER_MAX_BLOCK_MS, "120000");
+
+        Properties producerProps = AuditProducer.createProducerConfig(props, PROP_PREFIX);
+
+        assertProducerProp(producerProps, ProducerConfig.BATCH_SIZE_CONFIG, 262144);
+        assertProducerProp(producerProps, ProducerConfig.LINGER_MS_CONFIG, 50);
+        assertProducerProp(producerProps, ProducerConfig.BUFFER_MEMORY_CONFIG, 268435456L);
+        assertEquals("snappy", producerProps.get(ProducerConfig.COMPRESSION_TYPE_CONFIG));
+        assertProducerProp(producerProps, ProducerConfig.DELIVERY_TIMEOUT_MS_CONFIG, 180000);
+        assertProducerProp(producerProps, ProducerConfig.MAX_REQUEST_SIZE_CONFIG, 2097152);
+        assertProducerProp(producerProps, ProducerConfig.MAX_BLOCK_MS_CONFIG, 120000);
+        assertProducerProp(producerProps, ProducerConfig.REQUEST_TIMEOUT_MS_CONFIG, 45000);
+    }
+
+    @Test
+    public void testCreateProducerConfigPluginPartitioner() throws Exception {
+        Properties props = new Properties();
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_BOOTSTRAP_SERVERS, "kafka:9092");
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_SECURITY_PROTOCOL, "PLAINTEXT");
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_CONFIGURED_PLUGINS, "hdfs,hive");
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_PARTITIONER_CLASS,
+                AuditServerConstants.DEFAULT_PARTITIONER_CLASS);
+        props.setProperty(PROP_PREFIX + "." + AuditServerConstants.PROP_TOPIC_PARTITIONS_PER_CONFIGURED_PLUGIN, "3");
+
+        Properties producerProps = AuditProducer.createProducerConfig(props, PROP_PREFIX);
+
+        assertEquals(AuditServerConstants.DEFAULT_PARTITIONER_CLASS,
+                producerProps.get(ProducerConfig.PARTITIONER_CLASS_CONFIG));
+        assertEquals("hdfs,hive", producerProps.get(PROP_PREFIX + "." + AuditServerConstants.PROP_CONFIGURED_PLUGINS));
+        assertEquals("3", producerProps.get(PROP_PREFIX + "." + AuditServerConstants.PROP_TOPIC_PARTITIONS_PER_CONFIGURED_PLUGIN));
+    }
+}

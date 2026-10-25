@@ -28,6 +28,7 @@ then
   if [ "${KERBEROS_ENABLED}" == "true" ]
   then
     ${RANGER_SCRIPTS}/wait_for_keytab.sh rangerkms.keytab
+    ${RANGER_SCRIPTS}/wait_for_testusers_keytab.sh
   fi
 
   cd "${RANGER_HOME}"/kms || exit
@@ -36,6 +37,7 @@ then
     if [ "${KERBEROS_ENABLED}" == "true" ]
     then
       cp ${RANGER_SCRIPTS}/core-site.xml ${RANGER_HOME}/kms/ews/webapp/WEB-INF/classes/conf/core-site.xml
+      cp ${RANGER_SCRIPTS}/kms-site.xml ${RANGER_HOME}/kms/ews/webapp/WEB-INF/classes/conf/kms-site.xml
     fi
 
     touch "${RANGER_HOME}"/.setupDone
@@ -47,7 +49,18 @@ fi
 # delete PID file if exists
 rm -f /var/run/ranger_kms/rangerkms.pid
 
-cd ${RANGER_HOME}/kms && ./ranger-kms-services.sh start
+if [ -n "${JAVA_OPTS}" ] || [ -n "${RANGER_KMS_MAX_HEAP}" ]; then
+  {
+    [ -n "${JAVA_OPTS}" ] && echo "export JAVA_OPTS=\"${JAVA_OPTS}\""
+    [ -n "${RANGER_KMS_MAX_HEAP}" ] && echo "export RANGER_KMS_MAX_HEAP=\"${RANGER_KMS_MAX_HEAP}\""
+    [ -n "${RANGER_JVM_METASPACE}" ] && echo "export RANGER_JVM_METASPACE=\"${RANGER_JVM_METASPACE}\""
+    [ -n "${RANGER_JVM_MAX_METASPACE}" ] && echo "export RANGER_JVM_MAX_METASPACE=\"${RANGER_JVM_MAX_METASPACE}\""
+    [ -n "${RANGER_KMS_MAX_HEAP}" ] && echo "ranger_kms_max_heap_size=${RANGER_KMS_MAX_HEAP}"
+  } > ${RANGER_HOME}/kms/ews/webapp/WEB-INF/classes/conf/ranger-kms-env-javaops.sh
+fi
+
+# Start KMS directly; ranger-kms-services.sh uses su(1) which drops container env vars.
+cd ${RANGER_HOME}/kms && ./ranger-kms start
 
 RANGER_KMS_PID=`ps -ef  | grep -v grep | grep "Dproc_rangerkms" | awk '{print $2}'`
 

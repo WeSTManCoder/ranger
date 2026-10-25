@@ -19,12 +19,13 @@
 
 package org.apache.ranger.unixusersync.process;
 
-import com.sun.jersey.api.client.ClientResponse;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.hadoop.security.SecureClientLogin;
+import org.apache.http.HttpStatus;
 import org.apache.ranger.authorization.utils.JsonUtils;
+import org.apache.ranger.metrics.MetricCacheUtil;
 import org.apache.ranger.ugsyncutil.model.GroupUserInfo;
 import org.apache.ranger.ugsyncutil.model.UgsyncAuditInfo;
 import org.apache.ranger.ugsyncutil.model.UsersGroupRoleAssignments;
@@ -40,14 +41,15 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.security.auth.Subject;
-import javax.servlet.http.HttpServletResponse;
 import javax.ws.rs.core.Cookie;
 import javax.ws.rs.core.NewCookie;
+import javax.ws.rs.core.Response;
 
 import java.io.IOException;
 import java.net.UnknownHostException;
 import java.security.PrivilegedAction;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -80,7 +82,6 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
     public static final String PM_UPDATE_USERS_ROLES_URI             = "/service/xusers/users/roleassignments";
     /* ******************* */
 
-    private static final String  AUTHENTICATION_TYPE                 = "hadoop.security.authentication";
     private static final String  AUTH_KERBEROS                       = "kerberos";
     private static final String  KERBEROS_PRINCIPAL                  = "ranger.usersync.kerberos.principal";
     private static final String  KERBEROS_KEYTAB                     = "ranger.usersync.kerberos.keytab";
@@ -129,6 +130,8 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
     private boolean isRangerCookieEnabled;
     private boolean isUserSyncNameValidationEnabled;
     private boolean isSyncSourceValidationEnabled;
+    private boolean isDnValidationEnabled;
+    private MetricCacheUtil metricCacheUtil = MetricCacheUtil.getInstance();
     private String  recordsToPullPerCall = "10";
     private String  currentSyncSource;
     private String  ldapUrl;
@@ -141,7 +144,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
     String              keytab;
     String              policyMgrUserName;
     String              nameRules;
-    List<NewCookie>     cookieList        = new ArrayList<>();
+    Collection<NewCookie> cookieList = new ArrayList<>();
     Map<String, String> userMap           = new LinkedHashMap<>();
     Map<String, String> groupMap          = new LinkedHashMap<>();
     Map<String, String> whiteListUserMap  = new LinkedHashMap<>();
@@ -177,6 +180,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
     public synchronized void init() throws Throwable {
         isUserSyncNameValidationEnabled = config.isUserSyncNameValidationEnabled();
         isSyncSourceValidationEnabled   = config.isSyncSourceValidationEnabled();
+        isDnValidationEnabled           = config.isDnValidationEnabled();
         recordsToPullPerCall            = config.getMaxRecordsPerAPICall();
         policyMgrBaseUrl                = config.getPolicyManagerBaseURL();
         isMockRun                       = config.isMockRunEnabled();
@@ -204,7 +208,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
         String keyStoreType      = config.getSSLKeyStoreType();
         String trustStoreType    = config.getSSLTrustStoreType();
 
-        authenticationType = config.getProperty(AUTHENTICATION_TYPE, "simple");
+        authenticationType = config.getProperty(UgsyncCommonConstants.AUTHENTICATION_TYPE, "simple");
 
         try {
             principal = SecureClientLogin.getPrincipal(config.getProperty(KERBEROS_PRINCIPAL, ""), localHostname);
@@ -251,6 +255,9 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
 
         int noOfCachedUsers  = userCache.size();
         int noOfCachedGroups = groupCache.size();
+        metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.CACHE, MetricCacheUtil.NO_OF_CACHED_USERS, Long.valueOf(noOfCachedUsers));
+        metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.CACHE, MetricCacheUtil.NO_OF_CACHED_GROUPS, Long.valueOf(noOfCachedGroups));
+        metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.CACHE, MetricCacheUtil.NO_OF_CACHED_GROUPS_USERS, Long.valueOf(groupUsersCache.size()));
 
         switch (ugsyncAuditInfo.getSyncSource()) {
             case "LDAP/AD":
@@ -290,6 +297,9 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
         noOfModifiedUsers    = 0;
         noOfModifiedGroups   = 0;
         computeRolesForUsers = new HashSet<>();
+        metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.SYNCSOURCE, MetricCacheUtil.NO_OF_CACHED_USERS, Long.valueOf(sourceUsers.size()));
+        metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.SYNCSOURCE, MetricCacheUtil.NO_OF_CACHED_GROUPS, Long.valueOf(sourceGroups.size()));
+        metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.SYNCSOURCE, MetricCacheUtil.NO_OF_CACHED_GROUPS_USERS, Long.valueOf(sourceGroupUsers.size()));
 
         if (!isStartupFlag && computeDeletes) {
             LOG.info("Computing deleted users/groups");
@@ -482,7 +492,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
 
         while (retrievedCount < totalCount) {
             String              response   = null;
-            ClientResponse      clientResp;
+            Response      clientResp;
             Map<String, String> queryParams = new HashMap<>();
 
             queryParams.put("pageSize", recordsToPullPerCall);
@@ -495,7 +505,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                     clientResp = ldapUgSyncClient.get(PM_GROUP_LIST_URI, queryParams);
 
                     if (clientResp != null) {
-                        response = clientResp.getEntity(String.class);
+                        response = clientResp.readEntity(String.class);
                     }
                 } catch (Exception e) {
                     LOG.error("Failed to get groups from Ranger, Error is : {}", e.getMessage());
@@ -537,7 +547,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
 
         while (retrievedCount < totalCount) {
             String              response   = null;
-            ClientResponse      clientResp;
+            Response      clientResp;
             Map<String, String> queryParams = new HashMap<>();
 
             queryParams.put("pageSize", recordsToPullPerCall);
@@ -550,7 +560,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                     clientResp = ldapUgSyncClient.get(PM_USER_LIST_URI, queryParams);
 
                     if (clientResp != null) {
-                        response = clientResp.getEntity(String.class);
+                        response = clientResp.readEntity(String.class);
                     }
                 } catch (Exception e) {
                     LOG.error("Failed to get users from Ranger admin, Error is : {}", e.getMessage());
@@ -587,7 +597,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
         LOG.debug("==> PolicyMgrUserGroupBuilder.buildGroupUserLinkList()");
 
         String         response   = null;
-        ClientResponse clientResp;
+        Response clientResp;
 
         if (isRangerCookieEnabled) {
             response = cookieBasedGetEntity(PM_GET_ALL_GROUP_USER_MAP_LIST_URI, 0);
@@ -596,7 +606,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                 clientResp = ldapUgSyncClient.get(PM_GET_ALL_GROUP_USER_MAP_LIST_URI, null);
 
                 if (clientResp != null) {
-                    response = clientResp.getEntity(String.class);
+                    response = clientResp.readEntity(String.class);
                 }
             } catch (Exception e) {
                 LOG.error("Failed to get response, group user mappings from Ranger admin. Error is : {}", e.getMessage());
@@ -746,18 +756,16 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                     deltaGroups.put(groupName, curGroup);
                     noOfModifiedGroups++;
                     groupNameMap.put(groupDN, groupName);
-                } else {
-                    if (MapUtils.isNotEmpty(curGroupAttrs) && !StringUtils.equalsIgnoreCase(groupDN, curGroupDN)) { // skip update
-                        LOG.debug("[{}]: SyncSource update skipped, current group DN = {} new user DN  = {}", groupName, curGroupDN, groupDN);
+                } else if (MapUtils.isNotEmpty(curGroupAttrs) && !StringUtils.equalsIgnoreCase(groupDN, curGroupDN) && !isDnValidationEnabled) {
+                    LOG.debug("[{}]: SyncSource update skipped, current group DN = {} new group DN = {}", groupName, curGroupDN, groupDN);
 
-                        if (StringUtils.equalsIgnoreCase(curGroupAttrsStr, newGroupAttrsStr)) {
-                            groupNameMap.put(groupDN, groupName);
-                        }
-
-                        continue;
+                    if (StringUtils.equalsIgnoreCase(curGroupAttrsStr, newGroupAttrsStr)) {
+                        groupNameMap.put(groupDN, groupName);
                     }
+                } else {
+                    boolean allowSyncSourceOverwrite = !isSyncSourceValidationEnabled && isDnValidationEnabled;
 
-                    if (StringUtils.isEmpty(curSyncSource) || (!StringUtils.equalsIgnoreCase(curGroupAttrsStr, newGroupAttrsStr) && StringUtils.equalsIgnoreCase(curSyncSource, newSyncSource))) { // update
+                    if (StringUtils.isEmpty(curSyncSource) || (!StringUtils.equalsIgnoreCase(curGroupAttrsStr, newGroupAttrsStr) && (StringUtils.equalsIgnoreCase(curSyncSource, newSyncSource) || allowSyncSourceOverwrite))) {
                         if (StringUtils.isEmpty(curSyncSource)) {
                             LOG.debug("[{}]: SyncSource updated to {}, previously empty", groupName, newSyncSource);
                         } else {
@@ -769,6 +777,10 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                         deltaGroups.put(groupName, curGroup);
                         noOfModifiedGroups++;
                         groupNameMap.put(groupDN, groupName);
+
+                        if (allowSyncSourceOverwrite) {
+                            groupNameMap.remove(curGroupDN);
+                        }
                     } else {
                         if (!StringUtils.equalsIgnoreCase(curSyncSource, newSyncSource)) {
                             LOG.debug("[{}]: Different sync source exists, update skipped!", groupName);
@@ -830,26 +842,21 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
 
                 if (isStartupFlag && !isSyncSourceValidationEnabled && (!StringUtils.equalsIgnoreCase(curSyncSource, newSyncSource))) {
                     LOG.debug("[{}]: SyncSource updated to {}, previous value: {}", userName, newSyncSource, curSyncSource);
-
                     curUser = setOtherAttributes(curUser, newSyncSource, newUserAttrs, newUserAttrsStr);
 
                     curUser.setUserSource(SOURCE_EXTERNAL);
                     deltaUsers.put(userName, curUser);
-                    noOfModifiedGroups++;
+                    noOfModifiedUsers++;
                     userNameMap.put(userDN, userName);
-                } else {
-                    if (MapUtils.isNotEmpty(curUserAttrs) && !StringUtils.equalsIgnoreCase(userDN, curUserDN)) { // skip update
-                        // Same username with different DN already exists
-                        LOG.debug("[{}]: SyncSource update skipped, current user DN = {} new user DN  = {}", userName, curUserDN, userDN);
-
-                        if (StringUtils.equalsIgnoreCase(curUserAttrsStr, newUserAttrsStr)) {
-                            userNameMap.put(userDN, userName);
-                        }
-
-                        continue;
+                } else if (MapUtils.isNotEmpty(curUserAttrs) && !StringUtils.equalsIgnoreCase(userDN, curUserDN) && !isDnValidationEnabled) {
+                    LOG.debug("[{}]: SyncSource update skipped, current user DN = {} new user DN = {}", userName, curUserDN, userDN);
+                    if (StringUtils.equalsIgnoreCase(curUserAttrsStr, newUserAttrsStr)) {
+                        userNameMap.put(userDN, userName);
                     }
+                } else {
+                    boolean allowSyncSourceOverwrite = !isSyncSourceValidationEnabled && isDnValidationEnabled;
 
-                    if (StringUtils.isEmpty(curSyncSource) || (!StringUtils.equalsIgnoreCase(curUserAttrsStr, newUserAttrsStr) && StringUtils.equalsIgnoreCase(curSyncSource, newSyncSource))) { // update
+                    if (StringUtils.isEmpty(curSyncSource) || (!StringUtils.equalsIgnoreCase(curUserAttrsStr, newUserAttrsStr) && (StringUtils.equalsIgnoreCase(curSyncSource, newSyncSource) || allowSyncSourceOverwrite))) { // update
                         if (StringUtils.isEmpty(curSyncSource)) {
                             LOG.debug("[{}]: SyncSource updated to {}, previously empty", userName, newSyncSource);
                         } else {
@@ -862,6 +869,10 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                         deltaUsers.put(userName, curUser);
                         noOfModifiedUsers++;
                         userNameMap.put(userDN, userName);
+
+                        if (allowSyncSourceOverwrite) {
+                            userNameMap.remove(curUserDN);
+                        }
                     } else {
                         if (!StringUtils.equalsIgnoreCase(curSyncSource, newSyncSource)) {
                             LOG.debug("[{}]: Different sync source exists, update skipped!", userName);
@@ -1064,12 +1075,15 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                 try {
                     ret            = Integer.parseInt(response);
                     uploadedCount += pageSize;
+                    metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.ADD_USER_COUNT_SUCCESS, 1L);
                 } catch (NumberFormatException e) {
                     LOG.error("Failed to addOrUpdateUsers {}", uploadedCount, e);
+                    metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.ADD_USER_COUNT_FAIL, 1L);
                     throw e;
                 }
             } else {
                 LOG.error("Failed to addOrUpdateUsers {}", uploadedCount);
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.ADD_USER_COUNT_FAIL, 1L);
                 throw new Exception("Failed to addOrUpdateUsers" + uploadedCount);
             }
 
@@ -1086,15 +1100,22 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
         if (isRangerCookieEnabled) {
             response = cookieBasedUploadEntity(pagedList, uri);
         } else {
+            Response clientRes = null;
+
             try {
-                ClientResponse clientRes = ldapUgSyncClient.post(uri, null, pagedList);
+                clientRes = ldapUgSyncClient.post(uri, null, pagedList);
 
                 if (clientRes != null) {
-                    response = clientRes.getEntity(String.class);
+                    response = clientRes.readEntity(String.class);
                 }
             } catch (Throwable t) {
                 LOG.error("Failed to get response, Error is : ", t);
+                checkFailureApis(uri);
                 throw t;
+            } finally {
+                if (clientRes != null) {
+                    clientRes.close();
+                }
             }
         }
 
@@ -1162,12 +1183,15 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                 try {
                     ret            = Integer.parseInt(response);
                     uploadedCount += pageSize;
+                    metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.ADD_GROUP_COUNT_SUCCESS, 1L);
                 } catch (NumberFormatException e) {
                     LOG.error("Failed to addOrUpdateGroups {}", uploadedCount, e);
+                    metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.ADD_GROUP_COUNT_FAIL, 1L);
                     throw e;
                 }
             } else {
                 LOG.error("Failed to addOrUpdateGroups {}", uploadedCount);
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.ADD_GROUP_COUNT_FAIL, 1L);
                 throw new Exception("Failed to addOrUpdateGroups " + uploadedCount);
             }
 
@@ -1222,20 +1246,24 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
         while (uploadedCount < totalCount) {
             checkStatus();
 
-            int pagedGroupUserInfoListLen              = uploadedCount + pageSize;
+            int pagedGroupUserInfoListLen = uploadedCount + pageSize;
             List<GroupUserInfo> pagedGroupUserInfoList = groupUserInfoList.subList(uploadedCount, pagedGroupUserInfoListLen > totalCount ? totalCount : pagedGroupUserInfoListLen);
-            String response                            = getDataFromLdap(PM_ADD_GROUP_USER_LIST_URI, pagedGroupUserInfoList);
+
+            String response = getDataFromLdap(PM_ADD_GROUP_USER_LIST_URI, pagedGroupUserInfoList);
 
             if (StringUtils.isNotEmpty(response)) {
                 try {
                     ret            = Integer.parseInt(response);
                     uploadedCount += pageSize;
+                    metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.GROUP_USER_COUNT_SUCCESS, 1L);
                 } catch (NumberFormatException e) {
                     LOG.error("Failed to addOrUpdateGroupUsers {}", uploadedCount, e);
+                    metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.GROUP_USER_COUNT_FAIL, 1L);
                     throw e;
                 }
             } else {
                 LOG.error("Failed to addOrUpdateGroupUsers {}", uploadedCount);
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.GROUP_USER_COUNT_FAIL, 1L);
                 throw new Exception("Failed to addOrUpdateGroupUsers " + uploadedCount);
             }
 
@@ -1300,7 +1328,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                     pagedUgRoleAssignmentsList.setLastPage(true);
                 }
 
-                ClientResponse clientRes;
+                Response clientRes;
                 String         url        = PM_UPDATE_USERS_ROLES_URI;
                 String         jsonString = JsonUtils.objectToJson(pagedUgRoleAssignmentsList);
 
@@ -1313,7 +1341,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                         clientRes = ldapUgSyncClient.post(url, null, ugRoleAssignments);
 
                         if (clientRes != null) {
-                            response = clientRes.getEntity(String.class);
+                            response = clientRes.readEntity(String.class);
                         }
                     } catch (Throwable t) {
                         LOG.error("Failed to get response: ", t);
@@ -1368,28 +1396,43 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
 
         checkStatus();
 
-        String         response  = null;
-        ClientResponse clientRes;
+        String response = null;
 
         if (isRangerCookieEnabled) {
             response = cookieBasedUploadEntity(userInfo, PM_AUDIT_INFO_URI);
         } else {
             try {
-                clientRes = ldapUgSyncClient.post(PM_AUDIT_INFO_URI, null, userInfo);
+                Response clientRes = ldapUgSyncClient.post(PM_AUDIT_INFO_URI, null, userInfo);
 
                 if (clientRes != null) {
-                    response = clientRes.getEntity(String.class);
+                    response = clientRes.readEntity(String.class);
                 }
             } catch (Throwable t) {
                 LOG.error("Failed to get response, Error is : ", t);
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.AUDIT_COUNT_FAIL, 1L);
+                LOG.debug("<== PolicyMgrUserGroupBuilder.getUserGroupAuditInfo()");
+                return;
             }
         }
 
         LOG.debug("REST response from {} : {}", PM_AUDIT_INFO_URI, response);
 
-        JsonUtils.jsonToObject(response, UgsyncAuditInfo.class);
+        if (StringUtils.isNotEmpty(response)) {
+            try {
+                JsonUtils.jsonToObject(response, UgsyncAuditInfo.class);
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.AUDIT_COUNT_SUCCESS, 1L);
+                LOG.debug("AuditInfo Creation successful ");
+            } catch (Exception e) {
+                LOG.error("Failed to parse audit info response", e);
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.AUDIT_COUNT_FAIL, 1L);
+            }
+        } else {
+            LOG.error("Failed to post audit info - empty response from {}", PM_AUDIT_INFO_URI);
+            if (!isRangerCookieEnabled) {
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.AUDIT_COUNT_FAIL, 1L);
+            }
+        }
 
-        LOG.debug("AuditInfo Creation successful ");
         LOG.debug("<== PolicyMgrUserGroupBuilder.getUserGroupAuditInfo()");
     }
 
@@ -1429,46 +1472,47 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
         LOG.debug("==> PolicyMgrUserGroupBuilder.tryUploadEntityWithCookie()");
 
         String         response   = null;
-        ClientResponse clientResp = null;
+        Response clientResp = null;
 
         try {
             clientResp = ldapUgSyncClient.post(apiURL, null, obj, sessionId);
         } catch (Throwable t) {
             LOG.error("Failed to get response, Error is : ", t);
+            checkFailureApis(apiURL);
         }
 
         if (clientResp != null) {
             if (!(clientResp.toString().contains(apiURL))) {
-                clientResp.setStatus(HttpServletResponse.SC_NOT_FOUND);
-
+                //clientResp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                clientResp = Response.status(HttpStatus.SC_NOT_FOUND).entity("Resource not found.").build();
                 sessionId           = null;
                 isValidRangerCookie = false;
-            } else if (clientResp.getStatus() == HttpServletResponse.SC_UNAUTHORIZED) {
+                checkFailureApis(apiURL);
+            } else if (clientResp.getStatus() == HttpStatus.SC_UNAUTHORIZED) {
                 sessionId           = null;
                 isValidRangerCookie = false;
-            } else if (clientResp.getStatus() == HttpServletResponse.SC_NO_CONTENT || clientResp.getStatus() == HttpServletResponse.SC_OK) {
-                List<NewCookie> respCookieList = clientResp.getCookies();
-
+                checkFailureApis(apiURL);
+            } else if (clientResp.getStatus() == HttpStatus.SC_NO_CONTENT || clientResp.getStatus() == HttpStatus.SC_OK) {
+                Collection<NewCookie> respCookieList = clientResp.getCookies().values();
                 for (NewCookie cookie : respCookieList) {
                     if (cookie.getName().equalsIgnoreCase(rangerCookieName)) {
                         if (!(sessionId.getValue().equalsIgnoreCase(cookie.toCookie().getValue()))) {
                             sessionId = cookie.toCookie();
                         }
-
                         isValidRangerCookie = true;
                         break;
                     }
                 }
             }
 
-            if (clientResp.getStatus() != HttpServletResponse.SC_OK && clientResp.getStatus() != HttpServletResponse.SC_NO_CONTENT
-                    && clientResp.getStatus() != HttpServletResponse.SC_BAD_REQUEST) {
+            if (clientResp.getStatus() != HttpStatus.SC_OK && clientResp.getStatus() != HttpStatus.SC_NO_CONTENT
+                    && clientResp.getStatus() != HttpStatus.SC_BAD_REQUEST) {
                 sessionId           = null;
                 isValidRangerCookie = false;
             }
 
             clientResp.bufferEntity();
-            response = clientResp.getEntity(String.class);
+            response = clientResp.readEntity(String.class);
         }
 
         LOG.debug("<== PolicyMgrUserGroupBuilder.tryUploadEntityWithCookie()");
@@ -1480,25 +1524,24 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
         LOG.debug("==> PolicyMgrUserGroupBuilder.tryUploadEntityInfoWithCred()");
 
         String         response   = null;
-        ClientResponse clientResp = null;
-        String         jsonString = JsonUtils.objectToJson(obj);
-
-        LOG.debug("User Group Mapping: {}", jsonString);
+        Response clientResp = null;
 
         try {
             clientResp = ldapUgSyncClient.post(apiURL, null, obj);
         } catch (Throwable t) {
             LOG.error("Failed to get response, Error is : ", t);
+            checkFailureApis(apiURL);
         }
 
         if (clientResp != null) {
             if (!(clientResp.toString().contains(apiURL))) {
-                clientResp.setStatus(HttpServletResponse.SC_NOT_FOUND);
-            } else if (clientResp.getStatus() == HttpServletResponse.SC_UNAUTHORIZED) {
+                clientResp = Response.status(HttpStatus.SC_NOT_FOUND).entity("Resource not found.").build();
+                checkFailureApis(apiURL);
+            } else if (clientResp.getStatus() == HttpStatus.SC_UNAUTHORIZED) {
                 LOG.warn("Credentials response from ranger is 401.");
-            } else if (clientResp.getStatus() == HttpServletResponse.SC_OK || clientResp.getStatus() == HttpServletResponse.SC_NO_CONTENT) {
-                cookieList = clientResp.getCookies();
-
+                checkFailureApis(apiURL);
+            } else if (clientResp.getStatus() == HttpStatus.SC_OK || clientResp.getStatus() == HttpStatus.SC_NO_CONTENT) {
+                cookieList = clientResp.getCookies().values();
                 for (NewCookie cookie : cookieList) {
                     if (cookie.getName().equalsIgnoreCase(rangerCookieName)) {
                         sessionId           = cookie.toCookie();
@@ -1511,14 +1554,14 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                 }
             }
 
-            if (clientResp.getStatus() != HttpServletResponse.SC_OK && clientResp.getStatus() != HttpServletResponse.SC_NO_CONTENT && clientResp.getStatus() != HttpServletResponse.SC_BAD_REQUEST) {
+            if (clientResp.getStatus() != HttpStatus.SC_OK && clientResp.getStatus() != HttpStatus.SC_NO_CONTENT && clientResp.getStatus() != HttpStatus.SC_BAD_REQUEST) {
                 sessionId           = null;
                 isValidRangerCookie = false;
             }
 
             clientResp.bufferEntity();
 
-            response = clientResp.getEntity(String.class);
+            response = clientResp.readEntity(String.class);
         }
 
         LOG.debug("<== PolicyMgrUserGroupBuilder.tryUploadEntityInfoWithCred()");
@@ -1530,7 +1573,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
         LOG.debug("==> PolicyMgrUserGroupBuilder.tryGetEntityWithCred()");
 
         String              response    = null;
-        ClientResponse      clientResp  = null;
+        Response      clientResp  = null;
         Map<String, String> queryParams = new HashMap<>();
 
         queryParams.put("pageSize", recordsToPullPerCall);
@@ -1544,11 +1587,12 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
 
         if (clientResp != null) {
             if (!(clientResp.toString().contains(apiURL))) {
-                clientResp.setStatus(HttpServletResponse.SC_NOT_FOUND);
-            } else if (clientResp.getStatus() == HttpServletResponse.SC_UNAUTHORIZED) {
+                //clientResp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                clientResp = Response.status(HttpStatus.SC_NOT_FOUND).entity("Resource not found.").build();
+            } else if (clientResp.getStatus() == HttpStatus.SC_UNAUTHORIZED) {
                 LOG.warn("Credentials response from ranger is 401.");
-            } else if (clientResp.getStatus() == HttpServletResponse.SC_OK || clientResp.getStatus() == HttpServletResponse.SC_NO_CONTENT) {
-                cookieList = clientResp.getCookies();
+            } else if (clientResp.getStatus() == HttpStatus.SC_OK || clientResp.getStatus() == HttpStatus.SC_NO_CONTENT) {
+                cookieList = clientResp.getCookies().values();
 
                 for (NewCookie cookie : cookieList) {
                     if (cookie.getName().equalsIgnoreCase(rangerCookieName)) {
@@ -1562,14 +1606,14 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                 }
             }
 
-            if (clientResp.getStatus() != HttpServletResponse.SC_OK && clientResp.getStatus() != HttpServletResponse.SC_NO_CONTENT && clientResp.getStatus() != HttpServletResponse.SC_BAD_REQUEST) {
+            if (clientResp.getStatus() != HttpStatus.SC_OK && clientResp.getStatus() != HttpStatus.SC_NO_CONTENT && clientResp.getStatus() != HttpStatus.SC_BAD_REQUEST) {
                 sessionId           = null;
                 isValidRangerCookie = false;
             }
 
             clientResp.bufferEntity();
 
-            response = clientResp.getEntity(String.class);
+            response = clientResp.readEntity(String.class);
         }
 
         LOG.debug("<== PolicyMgrUserGroupBuilder.tryGetEntityWithCred()");
@@ -1581,7 +1625,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
         LOG.debug("==> PolicyMgrUserGroupBuilder.tryGetEntityWithCookie()");
 
         String              response    = null;
-        ClientResponse      clientResp  = null;
+        Response      clientResp  = null;
         Map<String, String> queryParams = new HashMap<>();
 
         queryParams.put("pageSize", recordsToPullPerCall);
@@ -1595,15 +1639,16 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
 
         if (clientResp != null) {
             if (!(clientResp.toString().contains(apiURL))) {
-                clientResp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                //clientResp.setStatus(HttpServletResponse.SC_NOT_FOUND);
+                clientResp = Response.status(HttpStatus.SC_NOT_FOUND).entity("Resource not found.").build();
 
                 sessionId           = null;
                 isValidRangerCookie = false;
-            } else if (clientResp.getStatus() == HttpServletResponse.SC_UNAUTHORIZED) {
+            } else if (clientResp.getStatus() == HttpStatus.SC_UNAUTHORIZED) {
                 sessionId           = null;
                 isValidRangerCookie = false;
-            } else if (clientResp.getStatus() == HttpServletResponse.SC_NO_CONTENT || clientResp.getStatus() == HttpServletResponse.SC_OK) {
-                List<NewCookie> respCookieList = clientResp.getCookies();
+            } else if (clientResp.getStatus() == HttpStatus.SC_NO_CONTENT || clientResp.getStatus() == HttpStatus.SC_OK) {
+                Collection<NewCookie> respCookieList = clientResp.getCookies().values();
 
                 for (NewCookie cookie : respCookieList) {
                     if (cookie.getName().equalsIgnoreCase(rangerCookieName)) {
@@ -1617,14 +1662,14 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                 }
             }
 
-            if (clientResp.getStatus() != HttpServletResponse.SC_OK && clientResp.getStatus() != HttpServletResponse.SC_NO_CONTENT && clientResp.getStatus() != HttpServletResponse.SC_BAD_REQUEST) {
+            if (clientResp.getStatus() != HttpStatus.SC_OK && clientResp.getStatus() != HttpStatus.SC_NO_CONTENT && clientResp.getStatus() != HttpStatus.SC_BAD_REQUEST) {
                 sessionId           = null;
                 isValidRangerCookie = false;
             }
 
             clientResp.bufferEntity();
 
-            response = clientResp.getEntity(String.class);
+            response = clientResp.readEntity(String.class);
         }
 
         LOG.debug("<== PolicyMgrUserGroupBuilder.tryGetEntityWithCookie()");
@@ -1732,15 +1777,30 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
 
         deletedGroups = new HashMap<>();
 
+        Set<String> sourceGroupNames = new HashSet<>();
+        for (Map<String, String> attrs : sourceGroups.values()) {
+            String originalName = attrs.get(UgsyncCommonConstants.ORIGINAL_NAME);
+            if (StringUtils.isNotEmpty(originalName)) {
+                sourceGroupNames.add(groupNameTransform(originalName.trim()));
+            }
+        }
+
         // Check if the group from cache exists in the sourceGroups. If not, mark as deleted group.
-        for (XGroupInfo groupInfo : groupCache.values()) {
+        for (Map.Entry<String, XGroupInfo> entry : groupCache.entrySet()) {
+            String              groupName       = entry.getKey();
+            XGroupInfo          groupInfo       = entry.getValue();
             Map<String, String> groupOtherAttrs = groupInfo.getOtherAttrsMap();
             String              groupDN         = groupOtherAttrs != null ? groupOtherAttrs.get(UgsyncCommonConstants.FULL_NAME) : null;
 
             if (StringUtils.isNotEmpty(groupDN) && !sourceGroups.containsKey(groupDN)
                     && StringUtils.equalsIgnoreCase(groupOtherAttrs.get(UgsyncCommonConstants.SYNC_SOURCE), currentSyncSource) &&
                     StringUtils.equalsIgnoreCase(groupOtherAttrs.get(UgsyncCommonConstants.LDAP_URL), ldapUrl)) {
-                if (ISHIDDEN.equals(groupInfo.getIsVisible())) {
+                if (sourceGroupNames.contains(groupName)) {
+                    LOG.info("group {} with different DN exists. Skip and wait for it to be updated.", groupName);
+                    continue;
+                }
+
+                if (!ISHIDDEN.equals(groupInfo.getIsVisible())) {
                     groupInfo.setIsVisible(ISHIDDEN);
                     deletedGroups.put(groupInfo.getName(), groupInfo);
                 } else {
@@ -1789,7 +1849,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
 
         int            ret;
         String         response  = null;
-        ClientResponse clientRes;
+        Response clientRes = null;
 
         if (isRangerCookieEnabled) {
             response = cookieBasedUploadEntity(deletedGroups.keySet(), PM_UPDATE_DELETED_GROUPS_URI);
@@ -1798,10 +1858,11 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
                 clientRes = ldapUgSyncClient.post(PM_UPDATE_DELETED_GROUPS_URI, null, deletedGroups.keySet());
 
                 if (clientRes != null) {
-                    response = clientRes.getEntity(String.class);
+                    response = clientRes.readEntity(String.class);
                 }
             } catch (Throwable t) {
                 LOG.error("Failed to get response, Error is : ", t);
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.DELETE_GROUP_COUNT_FAIL, 1L);
             }
         }
 
@@ -1810,12 +1871,15 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
         if (response != null) {
             try {
                 ret = Integer.parseInt(response);
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.DELETE_GROUP_COUNT_SUCCESS, 1L);
             } catch (NumberFormatException e) {
                 LOG.error("Failed to update deleted groups", e);
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.DELETE_GROUP_COUNT_FAIL, 1L);
                 throw e;
             }
         } else {
             LOG.error("Failed to update deleted groups ");
+            metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.DELETE_GROUP_COUNT_FAIL, 1L);
             throw new Exception("Failed to update deleted groups ");
         }
 
@@ -1847,14 +1911,29 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
 
         deletedUsers = new HashMap<>();
 
+        Set<String> sourceUserNames = new HashSet<>();
+        for (Map<String, String> attrs : sourceUsers.values()) {
+            String originalName = attrs.get(UgsyncCommonConstants.ORIGINAL_NAME);
+            if (StringUtils.isNotEmpty(originalName)) {
+                sourceUserNames.add(userNameTransform(originalName.trim()));
+            }
+        }
+
         // Check if the group from cache exists in the sourceGroups. If not, mark as deleted group.
-        for (XUserInfo userInfo : userCache.values()) {
+        for (Map.Entry<String, XUserInfo> entry : userCache.entrySet()) {
+            String               userName = entry.getKey();
+            XUserInfo           userInfo = entry.getValue();
             Map<String, String> userOtherAttrs = userInfo.getOtherAttrsMap();
             String              userDN         = userOtherAttrs != null ? userOtherAttrs.get(UgsyncCommonConstants.FULL_NAME) : null;
 
             if (StringUtils.isNotEmpty(userDN) && !sourceUsers.containsKey(userDN)
                     && StringUtils.equalsIgnoreCase(userOtherAttrs.get(UgsyncCommonConstants.SYNC_SOURCE), currentSyncSource)
                     && StringUtils.equalsIgnoreCase(userOtherAttrs.get(UgsyncCommonConstants.LDAP_URL), ldapUrl)) {
+                if (sourceUserNames.contains(userName)) {
+                    LOG.info("user {} with different DN exists. Skip and wait for it to be updated.", userName);
+                    continue;
+                }
+
                 if (!ISHIDDEN.equals(userInfo.getIsVisible())) {
                     userInfo.setIsVisible(ISHIDDEN);
                     deletedUsers.put(userInfo.getName(), userInfo);
@@ -1903,7 +1982,7 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
 
         int            ret;
         String         response  = null;
-        ClientResponse clientRes;
+        Response clientRes = null;
 
         if (isRangerCookieEnabled) {
             response = cookieBasedUploadEntity(deletedUsers.keySet(), PM_UPDATE_DELETED_USERS_URI);
@@ -1911,10 +1990,11 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
             try {
                 clientRes = ldapUgSyncClient.post(PM_UPDATE_DELETED_USERS_URI, null, deletedUsers.keySet());
                 if (clientRes != null) {
-                    response = clientRes.getEntity(String.class);
+                    response = clientRes.readEntity(String.class);
                 }
             } catch (Throwable t) {
                 LOG.error("Failed to get response, Error is : ", t);
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.DELETE_USER_COUNT_FAIL, 1L);
             }
         }
 
@@ -1923,12 +2003,15 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
         if (response != null) {
             try {
                 ret = Integer.parseInt(response);
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.DELETE_USER_COUNT_SUCCESS, 1L);
             } catch (NumberFormatException e) {
                 LOG.error("Failed to update deleted users", e);
+                metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.DELETE_USER_COUNT_FAIL, 1L);
                 throw e;
             }
         } else {
             LOG.error("Failed to update deleted users ");
+            metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.DELETE_USER_COUNT_FAIL, 1L);
             throw new Exception("Failed to update deleted users ");
         }
 
@@ -1942,6 +2025,22 @@ public class PolicyMgrUserGroupBuilder extends AbstractUserGroupSource implement
         if (!UserGroupSyncConfig.isUgsyncServiceActive()) {
             LOG.error(ERR_MSG_FOR_INACTIVE_SERVER);
             throw new RuntimeException(ERR_MSG_FOR_INACTIVE_SERVER);
+        }
+    }
+
+    private void checkFailureApis(String apiURL) {
+        if (apiURL.equalsIgnoreCase(PM_ADD_GROUPS_URI)) {
+            metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.ADD_GROUP_COUNT_FAIL, 1L);
+        } else if (apiURL.equalsIgnoreCase(PM_ADD_GROUP_USER_LIST_URI)) {
+            metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.GROUP_USER_COUNT_FAIL, 1L);
+        } else if (apiURL.equalsIgnoreCase(PM_ADD_USERS_URI)) {
+            metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.ADD_USER_COUNT_FAIL, 1L);
+        } else if (apiURL.equalsIgnoreCase(PM_AUDIT_INFO_URI)) {
+            metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.AUDIT_COUNT_FAIL, 1L);
+        } else if (apiURL.equalsIgnoreCase(PM_UPDATE_DELETED_USERS_URI)) {
+            metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.DELETE_USER_COUNT_FAIL, 1L);
+        } else if (apiURL.equalsIgnoreCase(PM_UPDATE_DELETED_GROUPS_URI)) {
+            metricCacheUtil.incrementMetric(MetricCacheUtil.MetricType.API, MetricCacheUtil.DELETE_GROUP_COUNT_FAIL, 1L);
         }
     }
 

@@ -20,21 +20,32 @@ package org.apache.ranger.audit.utils;
 
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
-import org.junit.Test;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
+import java.io.File;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
+import java.lang.reflect.Field;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Properties;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 public class RangerJSONAuditWriterTest {
@@ -61,13 +72,17 @@ public class RangerJSONAuditWriterTest {
         assertTrue(jsonAuditWriter.logJSON(Collections.singleton("This event will be logged in write(create) mode!")));
         assertTrue(jsonAuditWriter.reUseLastLogFile);
 
-        when(jsonAuditWriter.getLogFileStream()).thenThrow(new IOException("Unable to fetch log file stream!"));
-        assertFalse(jsonAuditWriter.logJSON(Collections.singleton("This event will not be logged due to exception!")));
+        synchronized (jsonAuditWriter) {
+            doThrow(new IOException("Unable to fetch log file stream!"))
+                    .when(jsonAuditWriter).getLogFileStream();
+            assertFalse(jsonAuditWriter.logJSON(
+                    Collections.singleton("This event will not be logged due to exception!")));
 
-        assertNull(jsonAuditWriter.ostream);
-        assertNull(jsonAuditWriter.logWriter);
-        assertNotNull(jsonAuditWriter.auditPath);
-        assertNotNull(jsonAuditWriter.fullPath);
+            assertNull(jsonAuditWriter.ostream);
+            assertNull(jsonAuditWriter.logWriter);
+            assertNotNull(jsonAuditWriter.auditPath);
+            assertNotNull(jsonAuditWriter.fullPath);
+        }
 
         reset(jsonAuditWriter);
         assertTrue(jsonAuditWriter.logJSON(Collections.singleton("Last log file will be opened in append mode and this event will be written")));
@@ -91,19 +106,27 @@ public class RangerJSONAuditWriterTest {
         assertTrue(jsonAuditWriter.reUseLastLogFile);
         assertTrue(jsonAuditWriter.logJSON(Collections.singleton("This event will be logged in write(create) mode!")));
 
-        when(jsonAuditWriter.getLogFileStream()).thenThrow(new IOException("Unable to fetch log file stream!"));
-        assertFalse(jsonAuditWriter.logJSON(Collections.singleton("This event will not be logged due to exception!")));
+        synchronized (jsonAuditWriter) {
+            doThrow(new IOException("Unable to fetch log file stream!"))
+                    .when(jsonAuditWriter).getLogFileStream();
+            assertFalse(jsonAuditWriter.logJSON(
+                    Collections.singleton("This event will not be logged due to exception!")));
 
-        assertNull(jsonAuditWriter.ostream);
-        assertNull(jsonAuditWriter.logWriter);
-        assertNotNull(jsonAuditWriter.auditPath);
-        assertNotNull(jsonAuditWriter.fullPath);
+            assertNull(jsonAuditWriter.ostream);
+            assertNull(jsonAuditWriter.logWriter);
+            assertNotNull(jsonAuditWriter.auditPath);
+            assertNotNull(jsonAuditWriter.fullPath);
+        }
 
         reset(jsonAuditWriter);
 
-        assertTrue(jsonAuditWriter.logJSON(Collections.singleton("Last log file will be opened in append mode and this event will be written")));
-        assertTrue(jsonAuditWriter.logJSON(Collections.singleton("This event will also be written in append mode")));
-        Path auditPath1 = jsonAuditWriter.auditPath;
+        final Path auditPath1;
+        synchronized (jsonAuditWriter) {
+            assertTrue(jsonAuditWriter.logJSON(Collections.singleton("Last log file will be opened in append mode and this event will be written")));
+            assertTrue(jsonAuditWriter.logJSON(Collections.singleton("This event will also be written in append mode")));
+            auditPath1 = jsonAuditWriter.auditPath;
+        }
+        assertNotNull(auditPath1);
 
         Thread.sleep(6000);
 
@@ -118,6 +141,7 @@ public class RangerJSONAuditWriterTest {
 
         // ensure the same rolled over file is not used for append
         assertNotEquals(auditPath1, jsonAuditWriter.auditPath);
+        assertNotNull(jsonAuditWriter.auditPath, "second write should create a new audit file path");
 
         // cleanup
         jsonAuditWriter.fileSystem.deleteOnExit(auditPath1);
@@ -165,18 +189,99 @@ public class RangerJSONAuditWriterTest {
         jsonAuditWriter.fileRolloverSec = 5; // in seconds
         jsonAuditWriter.init(props, "test", "localfs", auditConfigs);
 
-        assertTrue(jsonAuditWriter.logJSON(Collections.singleton("First file created and added this line!")));
-        Path auditPath1 = jsonAuditWriter.auditPath;
+        final Path auditPath1;
+        synchronized (jsonAuditWriter) {
+            assertTrue(jsonAuditWriter.logJSON(Collections.singleton("First file created and added this line!")));
+            auditPath1 = jsonAuditWriter.auditPath;
+        }
+        assertNotNull(auditPath1);
 
         Thread.sleep(6000);
 
         assertNull(jsonAuditWriter.ostream);
         assertNull(jsonAuditWriter.logWriter);
         assertTrue(jsonAuditWriter.logJSON(Collections.singleton("Second file created since rollover happened!")));
+        assertNotNull(jsonAuditWriter.auditPath, "second write should create a new audit file path");
 
         // cleanup
         jsonAuditWriter.fileSystem.deleteOnExit(auditPath1);
         jsonAuditWriter.fileSystem.deleteOnExit(jsonAuditWriter.auditPath);
         jsonAuditWriter.closeWriter();
+    }
+
+    @Test
+    public void testInitMethod() throws Exception {
+        RangerJSONAuditWriter jsonAuditWriter = new RangerJSONAuditWriter();
+        jsonAuditWriter.init();
+
+        Field field = org.apache.ranger.audit.utils.AbstractRangerAuditWriter.class.getDeclaredField("fileExtension");
+        field.setAccessible(true);
+        Assertions.assertEquals(".log", field.get(jsonAuditWriter));
+    }
+
+    @Test
+    public void testLogFileMethod() throws Exception {
+        RangerJSONAuditWriter jsonAuditWriter = spy(new RangerJSONAuditWriter());
+        doNothing().when(jsonAuditWriter).createFileSystemFolders();
+        doReturn(new PrintWriter(new StringWriter())).when(jsonAuditWriter).createWriter();
+        doReturn(true).when(jsonAuditWriter).logFileToHDFS(any(File.class));
+
+        setup();
+        jsonAuditWriter.init(props, "test", "localfs", auditConfigs);
+
+        File tempFile = File.createTempFile("ranger-audit-test", ".json");
+        tempFile.deleteOnExit();
+
+        boolean result = jsonAuditWriter.logFile(tempFile);
+        Assertions.assertTrue(result);
+        tempFile.delete();
+    }
+
+    @Test
+    public void testStartMethod() {
+        RangerJSONAuditWriter jsonAuditWriter = new RangerJSONAuditWriter();
+        jsonAuditWriter.start();
+    }
+
+    @Test
+    public void testGetLogFileStreamWithoutPeriodicRollover() throws Exception {
+        RangerJSONAuditWriter jsonAuditWriter = spy(new RangerJSONAuditWriter());
+        doNothing().when(jsonAuditWriter).createFileSystemFolders();
+        doReturn(new PrintWriter(new StringWriter())).when(jsonAuditWriter).createWriter();
+
+        setup();
+        props.setProperty("test.file.rollover.enable.periodic.rollover", "false");
+        jsonAuditWriter.init(props, "test", "localfs", auditConfigs);
+
+        // Set nextRollOverTime to avoid NPE
+        Field nextRollOverTimeField = org.apache.ranger.audit.utils.AbstractRangerAuditWriter.class.getDeclaredField("nextRollOverTime");
+        nextRollOverTimeField.setAccessible(true);
+        nextRollOverTimeField.set(jsonAuditWriter, new Date());
+
+        doNothing().when(jsonAuditWriter).closeFileIfNeeded();
+        PrintWriter result = jsonAuditWriter.getLogFileStream();
+        verify(jsonAuditWriter).closeFileIfNeeded();
+        Assertions.assertNotNull(result);
+        jsonAuditWriter.stop();
+    }
+
+    @Test
+    public void testFlushMethod() throws Exception {
+        RangerJSONAuditWriter jsonAuditWriter = spy(new RangerJSONAuditWriter());
+        doNothing().when(jsonAuditWriter).createFileSystemFolders();
+        doReturn(new PrintWriter(new StringWriter())).when(jsonAuditWriter).createWriter();
+
+        setup();
+        jsonAuditWriter.init(props, "test", "localfs", auditConfigs);
+
+        // Set nextRollOverTime to avoid NPE
+        Field nextRollOverTimeField = org.apache.ranger.audit.utils.AbstractRangerAuditWriter.class.getDeclaredField("nextRollOverTime");
+        nextRollOverTimeField.setAccessible(true);
+        nextRollOverTimeField.set(jsonAuditWriter, new Date());
+
+        jsonAuditWriter.logJSON(Collections.singleton("Test message"));
+        // Just call flush for coverage; don't verify superFlush
+        jsonAuditWriter.flush();
+        jsonAuditWriter.stop();
     }
 }

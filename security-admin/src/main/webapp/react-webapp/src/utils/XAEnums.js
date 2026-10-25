@@ -584,9 +584,11 @@ export const RegexValidation = {
   NAME_VALIDATION: {
     regexExpressionForName:
       /^([A-Za-z0-9_]|[\u00C0-\u017F])([a-z0-9,._\-+/@= ]|[\u00C0-\u017F])+$/i,
+    regexExpressionForUserName:
+      /^([A-Za-z0-9_]|[\u00C0-\u017F])([a-z0-9,._\-+/@=: ]|[\u00C0-\u017F])+$/i,
     regexExpressionForFirstAndLastName:
       /^([A-Za-z0-9_]|[\u00C0-\u017F])([a-zA-Z0-9\s_. -@]|[\u00C0-\u017F])+$/i,
-    regexforNameValidation: /^[a-zA-Z0-9_-][a-zA-Z0-9\s_-]{0,254}$/,
+    regexForNameValidation: /^[a-zA-Z0-9_-][a-zA-Z0-9\s_-]{0,254}$/,
     regexExpressionForSecondaryName:
       /^([A-Za-z0-9_]|[\u00C0-\u017F])([a-zA-Z0-9\s_. -@]|[\u00C0-\u017F])+$/i,
     regexforServiceNameValidation: /^[a-zA-Z0-9_-][a-zA-Z0-9_-]{0,254}$/,
@@ -598,10 +600,19 @@ export const RegexValidation = {
         characters.
         <br />
         2. Allowed special character ,._-+/@= and space. <br />
-        3. Name length should be greater than one."
+        3. Name length should be greater than one.
       </>
     ),
-    regexforNameValidationMessage:
+    userNameValidationMessage: (
+      <>
+        1. Name should be start with alphabet / numeric / underscore / non-us
+        characters.
+        <br />
+        2. Allowed special character ,._-+/@=: and space. <br />
+        3. Name length should be greater than one.
+      </>
+    ),
+    regexForNameValidationMessage:
       "Name should not start with space, it should be less than 256 characters and special characters are not allowed(except _ - and space).",
     secondaryNameValidationMessage: (
       <>
@@ -610,7 +621,7 @@ export const RegexValidation = {
         <br />
         2. Allowed special character ._-@ and space.
         <br />
-        3. Name length should be greater than one."
+        3. Name length should be greater than one.
       </>
     )
   },
@@ -646,7 +657,8 @@ export const PathAssociateWithModule = {
     "/reports/audit/agent",
     "/reports/audit/pluginStatus",
     "/reports/audit/userSync",
-    "/reports/audit/eventlog/:eventId"
+    "/reports/audit/eventlog/:eventId",
+    "/reports/audit/metric"
   ],
   "Security Zone": [
     "/zones/zone/list",
@@ -692,7 +704,11 @@ export const PathAssociateWithModule = {
   PageNotFound: ["/pageNotFound"],
   localLogin: ["/locallogin"],
   slashPath: ["/"],
-  Forbidden: ["/forbidden"]
+  Forbidden: ["/forbidden"],
+  CreateNewPolicyForm: ["/policymanager/create-policy"],
+  EditNewPolicyForm: [
+    "/service/:serviceId/policies/:policyId/new-policy-form-edit"
+  ]
 };
 
 /* Access */
@@ -701,13 +717,13 @@ export const DefStatus = {
   RecursiveStatus: {
     STATUS_RECURSIVE: {
       value: true,
-      label: "recursive",
+      label: "Recursive",
       rbkey: "xa.enum.RecursiveStatus.RECURSIVE",
       tt: "lbl.RecursiveStatus_RECURSIVE"
     },
     STATUS_NONRECURSIVE: {
       value: false,
-      label: "nonrecursive",
+      label: "Non-recursive",
       rbkey: "xa.enum.RecursiveStatus.NONRECURSIVE",
       tt: "lbl.RecursiveStatus_NONRECURSIVE"
     }
@@ -986,3 +1002,8 @@ export const additionalServiceConfigs = [
     type: "user"
   }
 ];
+export const policyConditionDisplayLabel = {
+  "Accessed after expiry_date (yes/no)?": "Accessed after expiry date",
+  "Enter boolean expression": "Boolean expression",
+  "IP Address Range": "IP Address Range"
+};

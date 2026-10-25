@@ -20,32 +20,29 @@ package org.apache.ranger.services.nifi.registry.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.sun.jersey.api.client.Client;
-import com.sun.jersey.api.client.ClientResponse;
-import com.sun.jersey.api.client.WebResource;
-import com.sun.jersey.api.client.config.ClientConfig;
-import com.sun.jersey.api.client.config.DefaultClientConfig;
-import com.sun.jersey.client.urlconnection.HTTPSProperties;
 import org.apache.commons.io.IOUtils;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.ranger.plugin.client.BaseClient;
 import org.apache.ranger.plugin.service.ResourceLookupContext;
+import org.apache.ranger.plugin.util.RangerDefaultHostnameVerifier;
+import org.apache.ranger.plugin.util.RangerJersey2ClientBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.HostnameVerifier;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLPeerUnverifiedException;
-import javax.net.ssl.SSLSession;
+import javax.ws.rs.ProcessingException;
+import javax.ws.rs.WebApplicationException;
+import javax.ws.rs.client.Client;
+import javax.ws.rs.client.WebTarget;
+import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
 
-import java.security.cert.Certificate;
-import java.security.cert.CertificateParsingException;
-import java.security.cert.X509Certificate;
+import java.io.InputStream;
 import java.util.ArrayList;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * Client to communicate with NiFi Registry and retrieve available resources.
@@ -58,11 +55,22 @@ public class NiFiRegistryClient {
     private final SSLContext       sslContext;
     private final HostnameVerifier hostnameVerifier;
     private final ObjectMapper     mapper = new ObjectMapper();
+    private final Client client;
 
     public NiFiRegistryClient(final String url, final SSLContext sslContext) {
         this.url              = url;
         this.sslContext       = sslContext;
-        this.hostnameVerifier = new NiFiRegistryHostnameVerifier();
+        this.hostnameVerifier = new RangerDefaultHostnameVerifier();
+        this.client = buildClient();
+    }
+
+    protected Client buildClient() {
+        // Use RangerJersey2ClientBuilder instead of unsafe ClientBuilder.newBuilder() to prevent MOXy usage
+        if (sslContext != null) {
+            return RangerJersey2ClientBuilder.createSecureClient(sslContext, hostnameVerifier, 30000, 30000);
+        } else {
+            return RangerJersey2ClientBuilder.createStandardClient();
+        }
     }
 
     public HashMap<String, Object> connectionTest() {
@@ -71,17 +79,23 @@ public class NiFiRegistryClient {
         HashMap<String, Object> responseData = new HashMap<>();
 
         try {
-            final WebResource    resource = getWebResource();
-            final ClientResponse response = getResponse(resource, "application/json");
-
+            Response response = getResponse();
             LOG.debug("Got response from NiFi with status code {}", response.getStatus());
 
             if (Response.Status.OK.getStatusCode() == response.getStatus()) {
                 connectivityStatus = true;
             } else {
                 connectivityStatus = false;
-                errMsg             = "Status Code = " + response.getStatus();
+                errMsg = "Status Code = " + response.getStatus();
+                // Read the error message from the response entity
+                try (InputStream is = response.readEntity(InputStream.class)) {
+                    errMsg += ": " + IOUtils.toString(is, "UTF-8");
+                }
             }
+        } catch (ProcessingException | WebApplicationException e) {
+            LOG.error("Connection to NiFi failed due to {}", e.getMessage(), e);
+            connectivityStatus = false;
+            errMsg = Optional.ofNullable(e.getMessage()).orElse("Unknown error");
         } catch (Exception e) {
             LOG.error("Connection to NiFi failed due to {}", e.getMessage(), e);
             connectivityStatus = false;
@@ -103,15 +117,17 @@ public class NiFiRegistryClient {
     }
 
     public List<String> getResources(ResourceLookupContext context) throws Exception {
-        final WebResource    resource = getWebResource();
-        final ClientResponse response = getResponse(resource, "application/json");
+        Response response = getResponse();
 
         if (Response.Status.OK.getStatusCode() != response.getStatus()) {
-            String errorMsg = IOUtils.toString(response.getEntityInputStream());
+            String errorMsg = response.readEntity(String.class);
+            response.close();
             throw new Exception("Unable to retrieve resources from NiFi Registry due to: " + errorMsg);
         }
 
-        JsonNode rootNode = mapper.readTree(response.getEntityInputStream());
+        JsonNode rootNode = mapper.readTree(response.readEntity(InputStream.class));
+        response.close();
+
         if (rootNode == null) {
             throw new Exception("Unable to retrieve resources from NiFi Registry");
         }
@@ -146,65 +162,12 @@ public class NiFiRegistryClient {
         return hostnameVerifier;
     }
 
-    protected WebResource getWebResource() {
-        final ClientConfig config = new DefaultClientConfig();
-        if (sslContext != null) {
-            config.getProperties().put(HTTPSProperties.PROPERTY_HTTPS_PROPERTIES,
-                    new HTTPSProperties(hostnameVerifier, sslContext));
-        }
-
-        final Client client = Client.create(config);
-        return client.resource(url);
+    protected WebTarget getWebTarget() {
+        return client.target(url);
     }
 
-    protected ClientResponse getResponse(WebResource resource, String accept) {
-        return resource.accept(accept).get(ClientResponse.class);
-    }
-
-    /**
-     * Custom hostname verifier that checks subject alternative names against the hostname of the URI.
-     */
-    private static class NiFiRegistryHostnameVerifier implements HostnameVerifier {
-        @Override
-        public boolean verify(final String hostname, final SSLSession ssls) {
-            try {
-                Certificate[] certificates = ssls.getPeerCertificates();
-                if (certificates == null || certificates.length == 0) {
-                    return false;
-                }
-                // verify hostname against server certificate[0]
-                if (certificates[0] instanceof X509Certificate) {
-                    final X509Certificate x509Cert = (X509Certificate) certificates[0];
-                    final List<String> subjectAltNames = getSubjectAlternativeNames(x509Cert);
-                    return subjectAltNames.contains(hostname.toLowerCase());
-                }
-            } catch (final SSLPeerUnverifiedException | CertificateParsingException ex) {
-                LOG.warn("Hostname Verification encountered exception verifying hostname due to: {}", ex, ex);
-            }
-
-            return false;
-        }
-
-        private List<String> getSubjectAlternativeNames(final X509Certificate certificate) throws CertificateParsingException {
-            final List<String>        result   = new ArrayList<>();
-            final Collection<List<?>> altNames = certificate.getSubjectAlternativeNames();
-            if (altNames == null) {
-                return result;
-            }
-
-            for (final List<?> generalName : altNames) {
-                /**
-                 * generalName has the name type as the first element a String or byte array for the second element. We return any general names that are String types.
-                 * We don't inspect the numeric name type because some certificates incorrectly put IPs and DNS names under the wrong name types.
-                 */
-                if (generalName.size() > 1) {
-                    final Object value = generalName.get(1);
-                    if (value instanceof String) {
-                        result.add(((String) value).toLowerCase());
-                    }
-                }
-            }
-            return result;
-        }
+    protected Response getResponse() {
+        WebTarget webTarget = getWebTarget();
+        return webTarget.request(MediaType.APPLICATION_JSON).get();
     }
 }

@@ -71,6 +71,7 @@ public class UserGroupSyncConfig {
     public static final  String UGSYNC_SERVER_HA_ENABLED_PARAM         = "ranger-ugsync.server.ha.enabled";
     public static final  String UGSYNC_NAME_VALIDATION_ENABLED         = "ranger.usersync.name.validation.enabled";
     public static final  String UGSYNC_SYNC_SOURCE_VALIDATION_ENABLED  = "ranger.usersync.syncsource.validation.enabled";
+    public static final  String UGSYNC_DN_VALIDATION_ENABLED           = "ranger.usersync.dn.validation.enabled";
     private static final Logger LOG                                    = LoggerFactory.getLogger(UserGroupSyncConfig.class);
     private static final String CORE_SITE_CONFIG_FILE                  = "core-site.xml";
     private static final String UGSYNC_SOURCE_CLASS_PARAM              = "ranger.usersync.source.impl.class";
@@ -137,6 +138,8 @@ public class UserGroupSyncConfig {
     private static final int     DEFAULT_LGSYNC_GROUP_HIERARCHY_LEVELS                              = 0;
     private static final int     DEFAULT_LGSYNC_PAGED_RESULTS_SIZE                                  = 500;
     private static final boolean DEFAULT_LGSYNC_LDAP_DELTASYNC_ENABLED                              = false;
+    private static final String  LGSYNC_LDAP_LARGEGROUPSYNC_ENABLED                                 = "ranger.usersync.ldap.largegroupsync";
+    private static final boolean DEFAULT_LGSYNC_LDAP_LARGEGROUPSYNC_ENABLED                         = false;
     private static final boolean DEFAULT_LGSYNC_LDAP_STARTTLS_ENABLED                               = false;
     private static final boolean DEFAULT_LGSYNC_PAGED_RESULTS_ENABLED                               = true;
     private static final boolean DEFAULT_LGSYNC_GROUP_SEARCH_ENABLED                                = true;
@@ -178,6 +181,7 @@ public class UserGroupSyncConfig {
     private static final long    UGSYNC_INIT_SLEEP_TIME_IN_MILLIS_BETWEEN_CYCLE_MIN_VALUE_FOR_HA = 5_000L;
     private static final boolean DEFAULT_UGSYNC_NAME_VALIDATION_ENABLED                          = false;
     private static final boolean DEFAULT_UGSYNC_SYNC_SOURCE_VALIDATION_ENABLED                   = true;
+    private static final boolean DEFAULT_UGSYNC_DN_VALIDATION_ENABLED                            = false;
 
     private static final String SYNC_SOURCE                         = "ranger.usersync.sync.source";
     private static final String LGSYNC_PAGED_RESULTS_ENABLED        = "ranger.usersync.pagedresultsenabled";
@@ -193,12 +197,14 @@ public class UserGroupSyncConfig {
     /* SSL Configs */
     private static final String SSL_KEYSTORE_FILE_TYPE_PARAM       = "ranger.keystore.file.type";
     private static final String SSL_TRUSTSTORE_FILE_TYPE_PARAM     = "ranger.truststore.file.type";
-    private static final String SSL_KEYSTORE_PATH_PARAM            = "ranger.usersync.keystore.file";
-    private static final String SSL_KEYSTORE_PATH_PASSWORD_PARAM   = "ranger.usersync.keystore.password";
+    private static final String SSL_KEYSTORE_PATH_PARAM            = "ranger.usersync.service.https.attrib.keystore.file";
+    private static final String SSL_KEYSTORE_PATH_PASSWORD_PARAM   = "ranger.usersync.service.https.attrib.keystore.pass";
     private static final String SSL_TRUSTSTORE_PATH_PARAM          = "ranger.usersync.truststore.file";
     private static final String SSL_TRUSTSTORE_PATH_PASSWORD_PARAM = "ranger.usersync.truststore.password";
-    private static final String SSL_KEYSTORE_PATH_PASSWORD_ALIAS   = "usersync.ssl.key.password";
+    private static final String SSL_KEYSTORE_PATH_PASSWORD_ALIAS   = "ranger.usersync.service.https.attrib.keystore.pass";
     private static final String SSL_TRUSTSTORE_PATH_PASSWORD_ALIAS = "usersync.ssl.truststore.password";
+
+    private static final String UGSYNC_UNIX_AUTH_ENABLED = "ranger.usersync.unix.auth.enabled";
 
     private static volatile UserGroupSyncConfig me;
     private final           Properties          prop = new Properties();
@@ -241,6 +247,10 @@ public class UserGroupSyncConfig {
 
     public Configuration getUserGroupConfig() {
         return userGroupConfig;
+    }
+
+    public Properties getProperties() {
+        return prop;
     }
 
     public String getUserSyncFileSource() {
@@ -403,6 +413,14 @@ public class UserGroupSyncConfig {
         }
 
         return prop.getProperty(SSL_TRUSTSTORE_PATH_PASSWORD_PARAM);
+    }
+
+    public boolean getUserSyncUnixAuth() {
+        boolean enableUnixAuth = false;
+        if (prop.containsKey(UGSYNC_UNIX_AUTH_ENABLED)) {
+            enableUnixAuth = Boolean.parseBoolean(prop.getProperty(UGSYNC_UNIX_AUTH_ENABLED));
+        }
+        return enableUnixAuth;
     }
 
     public long getUpdateMillisMin() {
@@ -1387,6 +1405,30 @@ public class UserGroupSyncConfig {
         }
 
         return isSyncSourceValidationEnabled;
+    }
+
+    public boolean isDnValidationEnabled() {
+        boolean isDnValidationEnabled = DEFAULT_UGSYNC_DN_VALIDATION_ENABLED;
+        String  val                   = prop.getProperty(UGSYNC_DN_VALIDATION_ENABLED);
+
+        if (StringUtils.isNotEmpty(val)) {
+            isDnValidationEnabled = Boolean.parseBoolean(val);
+        }
+
+        return isDnValidationEnabled;
+    }
+
+    public boolean isLargeGroupSyncEnabled() {
+        boolean largeGroupSyncEnabled;
+        String  val = prop.getProperty(LGSYNC_LDAP_LARGEGROUPSYNC_ENABLED);
+
+        if (val == null || val.trim().isEmpty()) {
+            largeGroupSyncEnabled = DEFAULT_LGSYNC_LDAP_LARGEGROUPSYNC_ENABLED;
+        } else {
+            largeGroupSyncEnabled = Boolean.valueOf(val);
+        }
+
+        return largeGroupSyncEnabled;
     }
 
     private void init() {

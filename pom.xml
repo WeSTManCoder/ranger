@@ -29,12 +29,13 @@
     <name>ranger</name>
     <description>Security for Enforcing Enterprise Policies</description>
     <properties>
+        <!-- versions are in alphabetical order -->
         <HikariCP.version>4.0.3</HikariCP.version>
         <aircompressor.version>0.27</aircompressor.version>
-        <!-- versions are in alphabetical order -->
         <antlr.version>3.5.2</antlr.version>
         <aopalliance.version>1.0</aopalliance.version>
         <apacheds.version>2.0.0-M22</apacheds.version>
+        <api-i18n.version>1.0.3</api-i18n.version>
         <asm.all.version>3.2</asm.all.version>
         <aspectj.version>1.8.2</aspectj.version>
         <assembly.plugin.version>2.6</assembly.plugin.version>
@@ -45,7 +46,7 @@
         <atlas.jettison.version>1.3.7</atlas.jettison.version>
         <atlas.version>2.4.0</atlas.version>
         <aws-java-sdk.version>1.12.765</aws-java-sdk.version>
-        <bouncycastle.version>1.79</bouncycastle.version>
+        <bouncycastle.version>1.84</bouncycastle.version>
         <cglib.version>2.2.0-b23</cglib.version>
         <checkstyle.failOnViolation>true</checkstyle.failOnViolation>
         <checkstyle.plugin.version>3.1.0</checkstyle.plugin.version>
@@ -56,19 +57,17 @@
         <com.microsoft.azure.azure-client-runtime.version>1.6.7</com.microsoft.azure.azure-client-runtime.version>
         <com.microsoft.azure.azure-keyvault.version>1.2.1</com.microsoft.azure.azure-keyvault.version>
         <com.microsoft.azure.azure-mgmt-keyvault.version>1.22.0</com.microsoft.azure.azure-mgmt-keyvault.version>
-
-        <!-- Azure Key Vault dependencies -->
         <com.microsoft.azure.version>1.22.0</com.microsoft.azure.version>
         <com.microsoft.rest.client-runtime.version>1.6.7</com.microsoft.rest.client-runtime.version>
-
-        <!-- Tencent KMS depencies -->
+        <com.opencsv.version>5.7.1</com.opencsv.version>
         <com.tencentcloudapi.sdk.version>3.1.322</com.tencentcloudapi.sdk.version>
-        <commons.beanutils.version>1.9.4</commons.beanutils.version>
-        <commons.cli.version>1.2</commons.cli.version>
+        <commons.beanutils.version>1.11.0</commons.beanutils.version>
+        <commons.cli.version>1.11.0</commons.cli.version>
         <commons.codec.version>1.15</commons.codec.version>
         <commons.collections.version>3.2.2</commons.collections.version>
+        <commons.collections4.version>4.4</commons.collections4.version>
         <commons.compress.version>1.26.2</commons.compress.version>
-        <commons.configuration.version>2.8.0</commons.configuration.version>
+        <commons.configuration.version>2.13.0</commons.configuration.version>
         <commons.configuration1.version>1.10</commons.configuration1.version>
         <commons.csv.version>1.0</commons.csv.version>
         <commons.dbcp.version>1.4</commons.dbcp.version>
@@ -89,21 +88,25 @@
         <distMgmtStagingUrl>https://repository.apache.org/service/local/staging/deploy/maven2</distMgmtStagingUrl>
         <dnsjava.version>3.6.2</dnsjava.version>
         <eclipse.jpa.version>2.7.12</eclipse.jpa.version>
-        <elasticsearch.version>7.10.2</elasticsearch.version>
-        <enunciate.version>2.13.2</enunciate.version>
-        <fasterxml.jackson.databind.version>2.17.2</fasterxml.jackson.databind.version>
-        <fasterxml.jackson.version>2.17.2</fasterxml.jackson.version>
+        <elasticsearch.version>7.17.29</elasticsearch.version>
+        <enunciate.version>2.15.0</enunciate.version>
+        <fasterxml.jackson.databind.version>2.18.10</fasterxml.jackson.databind.version>
+        <fasterxml.jackson.version>2.18.10</fasterxml.jackson.version>
         <fasterxml.woodstox.version>5.4.0</fasterxml.woodstox.version>
-        <gcp.protobuf-java.version>3.25.5</gcp.protobuf-java.version>
-
-        <!-- GCP HSM -->
-        <google.cloud.kms>2.3.0</google.cloud.kms>
+        <gcp.protobuf-java.version>4.33.6</gcp.protobuf-java.version>
+        <glassfish.hk2.version>2.6.1</glassfish.hk2.version>
+        <google.auth.library.oauth2.http.version>1.14.0</google.auth.library.oauth2.http.version>
+        <google.cloud.kms>2.96.0</google.cloud.kms>
+        <google.failureaccess.version>1.0.3</google.failureaccess.version>
+        <google.gax.version>2.81.0</google.gax.version>
+        <google.guava.version>33.4.8-jre</google.guava.version>
+        <google.re2j.version>1.2</google.re2j.version>
         <googlecode.log4jdbc.version>1.2</googlecode.log4jdbc.version>
-        <graalvm.version>22.3.0</graalvm.version>
-        <gson.version>2.9.0</gson.version>
+        <graalvm.version>25.1.3</graalvm.version>
+        <gson.version>2.13.1</gson.version>
         <guice.version>4.0</guice.version>
-        <hadoop-shaded-guava.version>1.1.1</hadoop-shaded-guava.version>
-        <hadoop.version>3.3.6</hadoop.version>
+        <hadoop-shaded-guava.version>1.4.0</hadoop-shaded-guava.version>
+        <hadoop.version>3.4.2</hadoop.version>
         <hamcrest.version>2.2</hamcrest.version>
         <hbase-shaded-miscellaneous>4.1.7</hbase-shaded-miscellaneous>
         <hbase-shaded-netty>4.1.7</hbase-shaded-netty>
@@ -120,42 +123,42 @@
         <io.opentelemetry-semconv.version>1.26.0-alpha</io.opentelemetry-semconv.version>
         <io.opentelemetry.version>1.40.0</io.opentelemetry.version>
         <io.reactivex.rxjava.version>1.3.8</io.reactivex.rxjava.version>
-
-        <!-- JaCoCo Properties -->
         <jacoco.version>0.8.13</jacoco.version>
-        <java.version.required>1.8</java.version.required>
-        <javac.source.version>1.8</javac.source.version>
-        <javac.target.version>1.8</javac.target.version>
-        <javax-inject.version>1</javax-inject.version>
-        <javax.annotation-api>1.3.2</javax.annotation-api>
+        <jakarta.activation-api.version>1.2.2</jakarta.activation-api.version>
+        <jakarta.ws.rs-api.version>2.1.6</jakarta.ws.rs-api.version>
+        <jakarta.xml.bind-api.version>2.3.3</jakarta.xml.bind-api.version>
+        <java.version.required>17</java.version.required>
+        <javac.source.version>17</javac.source.version>
+        <javac.target.version>17</javac.target.version>
+        <javassist.version>3.22.0-GA</javassist.version>
+        <javax.annotation-api.version>1.3.2</javax.annotation-api.version>
         <javax.el.version>3.0.1-b12</javax.el.version>
+        <javax.inject.version>1</javax.inject.version>
+        <javax.json-api.version>1.1.3</javax.json-api.version>
         <javax.persistence.version>2.1.0</javax.persistence.version>
-        <javax.servlet.version>3.1.0</javax.servlet.version>
+        <javax.servlet.version>4.0.1</javax.servlet.version>
         <javax.validation>2.0.1.Final</javax.validation>
-        <jaxb-impl.version>2.3.3</jaxb-impl.version>
+        <javax.ws.rs-api.version>2.1.1</javax.ws.rs-api.version>
+        <javax.xml.ws.axws-api.version>2.3.1</javax.xml.ws.axws-api.version>
+        <jaxb-core.version>3.0.0</jaxb-core.version>
+        <jaxb-impl.version>2.3.9</jaxb-impl.version>
         <jaxb.api.version>2.3.1</jaxb.api.version>
-        <jericho.html.version>3.3</jericho.html.version>
-        <jersey-bundle.version>1.19.4</jersey-bundle.version>
-        <jersey-client.version>2.35</jersey-client.version>
-        <jersey-core.version>1.19.4</jersey-core.version>
-        <jersey-server.version>1.19.4</jersey-server.version>
-        <jersey-spring.version>1.19.4</jersey-spring.version>
+        <jericho.html.version>3.4</jericho.html.version>
+        <jersey-client.version>2.47</jersey-client.version>
         <jettison.version>1.5.4</jettison.version>
         <jetty-client.version>9.4.56.v20240826</jetty-client.version>
         <jline.version>0.9.94</jline.version>
-        <jna-platform.version>5.7.0</jna-platform.version>
-        <jna.version>5.7.0</jna.version>
         <joda.time.version>2.10.6</joda.time.version>
         <jopt-simple.version>3.2</jopt-simple.version>
         <json4s.version>3.2.11</json4s.version>
         <jsonsmart.version>2.4.10</jsonsmart.version>
         <jsr250.version>1.0</jsr250.version>
         <jsr305.version>1.3.9</jsr305.version>
-        <junit.jupiter.version>5.10.0</junit.jupiter.version>
-        <kafka.version>2.8.2</kafka.version>
+        <junit.jupiter.version>5.14.3</junit.jupiter.version>
+        <junit.platform.version>1.14.3</junit.platform.version>
+        <kafka.version>3.9.1</kafka.version>
         <kerby.version>2.0.3</kerby.version>
         <knox.gateway.version>2.0.0</knox.gateway.version>
-        <kstruct.gethostname4j.version>1.0.0</kstruct.gethostname4j.version>
         <kylin.version>4.0.4</kylin.version>
         <libpam4j.version>1.10</libpam4j.version>
         <libthrift.version>0.14.0</libthrift.version>
@@ -163,27 +166,36 @@
         <log4j2.version>2.17.2</log4j2.version>
         <logback.version>1.3.14</logback.version>
         <lucene.version>8.11.3</lucene.version>
+        <maven-antrun-plugin.version>1.8</maven-antrun-plugin.version>
+        <maven-clean-plugin.version>3.3.2</maven-clean-plugin.version>
+        <maven-compiler-plugin.version>3.8.1</maven-compiler-plugin.version>
+        <maven-dependency-plugin.version>3.8.1</maven-dependency-plugin.version>
+        <maven-enforcer-plugin.version>3.1.0</maven-enforcer-plugin.version>
+        <maven-jar-plugin.version>3.0.2</maven-jar-plugin.version>
         <maven-plugin-sortpom.version>3.0.1</maven-plugin-sortpom.version>
+        <maven-resources-plugin.version>3.2.0</maven-resources-plugin.version>
+        <maven-shade-plugin.version>3.4.1</maven-shade-plugin.version>
+        <maven-war-plugin.version>3.4.0</maven-war-plugin.version>
         <maven.exec.plugin.version>1.6.0</maven.exec.plugin.version>
-        <maven.pmd.plugin.version>3.14.0</maven.pmd.plugin.version>
-        <maven.surefire.plugin.version>3.0.0-M6</maven.surefire.plugin.version>
+        <maven.pmd.plugin.version>3.15.0</maven.pmd.plugin.version>
+        <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
         <maven.version.required>3.6.3</maven.version.required>
         <metrics.core.version>3.0.2</metrics.core.version>
-        <mockito.version>3.12.4</mockito.version>
-        <mysql-connector-java.version>5.1.49</mysql-connector-java.version>
+        <mockito.version>5.23.0</mockito.version>
         <net.minidev.asm.version>1.0.2</net.minidev.asm.version>
-        <netty-all.version>4.1.124.Final</netty-all.version>
+        <netty-all.version>4.1.130.Final</netty-all.version>
         <nimbus-jose-jwt.version>10.0.1</nimbus-jose-jwt.version>
         <noggit.version>0.8</noggit.version>
-        <orc.core.version>1.6.7</orc.core.version>
-        <orc.version>1.5.8</orc.version>
-        <org.bouncycastle.bcpkix-jdk18on>1.79</org.bouncycastle.bcpkix-jdk18on>
-        <org.bouncycastle.bcprov-jdk18on>1.79</org.bouncycastle.bcprov-jdk18on>
+        <opensearch.client.java.version>3.10.0</opensearch.client.java.version>
+        <opensearch.client.rest.version>2.19.6</opensearch.client.rest.version>
+        <orc.core.version>2.0.3</orc.core.version>
+        <orc.version>2.0.3</orc.version>
+        <org.bouncycastle.bcpkix-jdk18on>1.84</org.bouncycastle.bcpkix-jdk18on>
+        <org.bouncycastle.bcprov-jdk18on>1.84</org.bouncycastle.bcprov-jdk18on>
         <owasp-java-html-sanitizer.version>20211018.2</owasp-java-html-sanitizer.version>
-        <ozone.version>1.4.0</ozone.version>
+        <ozone.version>2.1.1</ozone.version>
         <paranamer.version>2.3</paranamer.version>
         <poi.version>5.2.2</poi.version>
-        <!-- presto plugin deps -->
         <presto.airlift.version>0.192</presto.airlift.version>
         <presto.bval-jsr.version>2.0.0</presto.bval-jsr.version>
         <presto.guice.version>4.2.2</presto.guice.version>
@@ -191,7 +203,7 @@
         <presto.validation-api.version>2.0.1.Final</presto.validation-api.version>
         <presto.version>333</presto.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <protobuf-java.version>3.25.5</protobuf-java.version>
+        <protobuf-java.version>4.33.6</protobuf-java.version>
         <ratis-thirdparty.version>0.7.0</ratis-thirdparty.version>
         <ratis.version>2.1.0</ratis.version>
         <reload4j.version>1.2.19</reload4j.version>
@@ -214,10 +226,8 @@
         <springframework.version>5.3.39</springframework.version>
         <sqoop.version>1.99.7</sqoop.version>
         <storm.version>1.2.4</storm.version>
-        <sun-jersey-bundle.version>1.19</sun-jersey-bundle.version>
         <testng.version>7.5.1</testng.version>
-        <tomcat.embed.version>9.0.109</tomcat.embed.version>
-
+        <tomcat.embed.version>9.0.120</tomcat.embed.version>
         <!-- trino plugin deps -->
         <trino.airlift.version>0.192</trino.airlift.version>
         <trino.bval-jsr.version>2.0.0</trino.bval-jsr.version>
@@ -225,20 +235,29 @@
         <trino.re2j.version>1.1</trino.re2j.version>
         <trino.validation-api.version>2.0.1.Final</trino.validation-api.version>
         <trino.version>451</trino.version>
+        <validation-api.version>2.0.2</validation-api.version>
         <velocity.version>2.3</velocity.version>
+        <xml-security-impl.version>1.0</xml-security-impl.version>
         <zookeeper.version>3.9.2</zookeeper.version>
     </properties>
     <dependencyManagement>
         <dependencies>
             <dependency>
+                <groupId>org.glassfish.jersey</groupId>
+                <artifactId>jersey-bom</artifactId>
+                <version>${jersey-client.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${fasterxml.jackson.databind.version}</version>
+            </dependency>
+            <dependency>
                 <groupId>com.google.code.gson</groupId>
                 <artifactId>gson</artifactId>
                 <version>${gson.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>com.webcohesion.enunciate</groupId>
-                <artifactId>enunciate-core-annotations</artifactId>
-                <version>${enunciate.version}</version>
             </dependency>
             <dependency>
                 <groupId>commons-beanutils</groupId>
@@ -257,26 +276,30 @@
             </dependency>
             <dependency>
                 <groupId>org.apache.hadoop</groupId>
-                <artifactId>hadoop-common</artifactId>
+                <artifactId>hadoop-client-api</artifactId>
                 <version>${hadoop.version}</version>
                 <exclusions>
                     <exclusion>
-                        <groupId>org.apache.avro</groupId>
-                        <artifactId>avro</artifactId>
+                        <groupId>com.sun.jersey</groupId>
+                        <artifactId>*</artifactId>
                     </exclusion>
                     <exclusion>
-                        <groupId>org.codehaus.jackson</groupId>
+                        <groupId>com.sun.jersey.contribs</groupId>
                         <artifactId>*</artifactId>
                     </exclusion>
                 </exclusions>
             </dependency>
             <dependency>
                 <groupId>org.apache.hadoop</groupId>
-                <artifactId>hadoop-hdfs</artifactId>
+                <artifactId>hadoop-client-runtime</artifactId>
                 <version>${hadoop.version}</version>
                 <exclusions>
                     <exclusion>
-                        <groupId>org.codehaus.jackson</groupId>
+                        <groupId>com.sun.jersey</groupId>
+                        <artifactId>*</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>com.sun.jersey.contribs</groupId>
                         <artifactId>*</artifactId>
                     </exclusion>
                 </exclusions>
@@ -287,7 +310,23 @@
                 <version>${hadoop.version}</version>
                 <exclusions>
                     <exclusion>
+                        <groupId>com.sun.jersey</groupId>
+                        <artifactId>*</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>com.sun.jersey.contribs</groupId>
+                        <artifactId>*</artifactId>
+                    </exclusion>
+                    <exclusion>
                         <groupId>org.codehaus.jackson</groupId>
+                        <artifactId>*</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.codehaus.jettison</groupId>
+                        <artifactId>jettison</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.jline</groupId>
                         <artifactId>*</artifactId>
                     </exclusion>
                 </exclusions>
@@ -298,8 +337,20 @@
                 <version>${hadoop.version}</version>
                 <exclusions>
                     <exclusion>
+                        <groupId>com.sun.jersey</groupId>
+                        <artifactId>*</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>com.sun.jersey.contribs</groupId>
+                        <artifactId>*</artifactId>
+                    </exclusion>
+                    <exclusion>
                         <groupId>org.codehaus.jackson</groupId>
                         <artifactId>*</artifactId>
+                    </exclusion>
+                    <exclusion>
+                        <groupId>org.codehaus.jettison</groupId>
+                        <artifactId>jettison</artifactId>
                     </exclusion>
                 </exclusions>
             </dependency>
@@ -335,12 +386,6 @@
                 <version>${jacoco.version}</version>
             </dependency>
             <dependency>
-                <groupId>mysql</groupId>
-                <artifactId>mysql-connector-java</artifactId>
-                <version>${mysql-connector-java.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <dependency>
                 <groupId>org.hamcrest</groupId>
                 <artifactId>hamcrest</artifactId>
                 <version>${hamcrest.version}</version>
@@ -348,13 +393,13 @@
             </dependency>
             <dependency>
                 <groupId>org.junit.jupiter</groupId>
-                <artifactId>junit-jupiter-api</artifactId>
+                <artifactId>junit-jupiter</artifactId>
                 <version>${junit.jupiter.version}</version>
                 <scope>test</scope>
             </dependency>
             <dependency>
-                <groupId>org.junit.vintage</groupId>
-                <artifactId>junit-vintage-engine</artifactId>
+                <groupId>org.junit.jupiter</groupId>
+                <artifactId>junit-jupiter-engine</artifactId>
                 <version>${junit.jupiter.version}</version>
                 <scope>test</scope>
             </dependency>
@@ -362,12 +407,6 @@
                 <groupId>org.mockito</groupId>
                 <artifactId>mockito-core</artifactId>
                 <version>${mockito.version}</version>
-                <scope>test</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.testng</groupId>
-                <artifactId>testng</artifactId>
-                <version>${testng.version}</version>
                 <scope>test</scope>
             </dependency>
         </dependencies>
@@ -387,7 +426,7 @@
                 </plugin>
                 <plugin>
                     <artifactId>maven-compiler-plugin</artifactId>
-                    <version>3.3</version>
+                    <version>${maven-compiler-plugin.version}</version>
                     <configuration>
                         <useIncrementalCompilation>false</useIncrementalCompilation>
                         <source>${javac.source.version}</source>
@@ -400,14 +439,17 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-resources-plugin</artifactId>
-                    <version>2.7</version>
+                    <version>${maven-resources-plugin.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-surefire-plugin</artifactId>
                     <version>${maven.surefire.plugin.version}</version>
                     <configuration>
-                        <argLine>${argLine} -Djava.library.path="${hadoop.library.path}${path.separator}${java.library.path}"</argLine>
+                        <argLine>${argLine} -Djava.library.path="${hadoop.library.path}${path.separator}${java.library.path}"
+                            --add-opens java.base/java.lang.reflect=ALL-UNNAMED --add-opens java.base/java.lang=ALL-UNNAMED
+                            --add-opens java.xml.crypto/com.sun.org.apache.xml.internal.security.utils=ALL-UNNAMED
+                            --add-opens java.base/com.sun.crypto.provider=ALL-UNNAMED</argLine>
                         <skipTests>${skipTests}</skipTests>
                         <encoding>UTF-8</encoding>
                         <systemProperties>
@@ -419,23 +461,27 @@
                                 <name>catalina.base</name>
                                 <value>${project.build.directory}</value>
                             </property>
+                            <property>
+                                <name>polyglot.engine.WarnInterpreterOnly</name>
+                                <value>false</value>
+                            </property>
                         </systemProperties>
                     </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-jar-plugin</artifactId>
-                    <version>3.0.2</version>
+                    <version>${maven-jar-plugin.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-antrun-plugin</artifactId>
-                    <version>1.8</version>
+                    <version>${maven-antrun-plugin.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-source-plugin</artifactId>
-                    <version>2.4</version>
+                    <version>${maven-source-plugin.version}</version>
                     <configuration>
                         <attach>true</attach>
                     </configuration>
@@ -451,7 +497,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-clean-plugin</artifactId>
-                    <version>2.6.1</version>
+                    <version>${maven-clean-plugin.version}</version>
                     <configuration>
                         <filesets>
                             <fileset>
@@ -466,13 +512,14 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-release-plugin</artifactId>
-                    <version>2.5.2</version>
+                    <version>${maven-release-plugin.version}</version>
                 </plugin>
                 <plugin>
                     <groupId>com.webcohesion.enunciate</groupId>
                     <artifactId>enunciate-maven-plugin</artifactId>
                     <version>${enunciate.version}</version>
                     <configuration>
+                        <configFile>enunciate.xml</configFile>
                         <enunciateArtifactId />
                         <docsDir>docs/src/site/</docsDir>
                         <source>1.8</source>
@@ -520,7 +567,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-enforcer-plugin</artifactId>
-                <version>1.4.1</version>
+                <version>${maven-enforcer-plugin.version}</version>
                 <executions>
                     <execution>
                         <id>enforce-versions</id>
@@ -538,6 +585,57 @@
                             </rules>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>ban-legacy-dependencies</id>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <excludes>
+                                        <!-- Ban JUnit 4 - project has migrated to JUnit 5 -->
+                                        <exclude>junit:junit:*:*:compile</exclude>
+                                        <exclude>junit:junit:*:*:runtime</exclude>
+                                        <exclude>junit:junit:*:*:provided</exclude>
+                                        <exclude>junit:junit-dep:*:*:compile</exclude>
+                                        <exclude>junit:junit-dep:*:*:runtime</exclude>
+                                        <exclude>junit:junit-dep:*:*:provided</exclude>
+
+                                        <!-- Ban Jersey 1.x - project has migrated to Jersey 2.x (Glassfish) -->
+                                        <exclude>com.sun.jersey:*:*:*:compile</exclude>
+                                        <exclude>com.sun.jersey:*:*:*:runtime</exclude>
+                                        <exclude>com.sun.jersey:*:*:*:provided</exclude>
+                                        <exclude>com.sun.jersey.contribs:*:*:*:compile</exclude>
+                                        <exclude>com.sun.jersey.contribs:*:*:*:runtime</exclude>
+                                        <exclude>com.sun.jersey.contribs:*:*:*:provided</exclude>
+                                    </excludes>
+                                    <!-- Allow Jersey 1 on test scope only (e.g. Hadoop MiniDFSCluster); runtime uses Jersey 2 -->
+                                    <includes>
+                                        <include>com.sun.jersey:*:*:*:test</include>
+                                        <include>com.sun.jersey.contribs:*:*:*:test</include>
+                                        <!-- Transitives of the 1.19.4 test stack are often still modeled as compile; only these
+                                             coordinates are used (hdfs-agent minicluster, nestedstructure test shims). -->
+                                        <include>com.sun.jersey:jersey-core:jar:1.19.4:*</include>
+                                        <include>com.sun.jersey:jersey-client:jar:1.19.4:*</include>
+                                        <include>com.sun.jersey:jersey-server:jar:1.19.4:*</include>
+                                        <include>com.sun.jersey:jersey-servlet:jar:1.19.4:*</include>
+                                    </includes>
+                                    <searchTransitive>true</searchTransitive>
+                                    <message>❌ Banned dependencies detected!
+                                        
+                                        This project has migrated to:
+                                        - JUnit 5 (org.junit.jupiter:junit-jupiter) - NOT JUnit 4 (junit:junit)
+                                        - Jersey 2.x (org.glassfish.jersey.*) - NOT Jersey 1.x (com.sun.jersey:*)
+                                        
+                                        Test-scoped dependencies are allowed for compatibility with test infrastructure.
+                                        
+                                        Please update your dependencies accordingly.</message>
+                                </bannedDependencies>
+                            </rules>
+                            <fail>true</fail>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>
@@ -551,7 +649,7 @@
                     <sourceEncoding>UTF-8</sourceEncoding>
                     <failOnViolation>true</failOnViolation>
                     <linkXRef>false</linkXRef>
-                    <includeTests>true</includeTests>
+                    <includeTests>false</includeTests>
                     <verbose>true</verbose>
                     <excludeRoots>
                         <excludeRoot>${basedir}/src/main/generated</excludeRoot>
@@ -587,6 +685,7 @@
                         <exclude>.gitignore/**</exclude>
                         <exclude>.svn/**</exclude>
                         <exclude>.idea/**</exclude>
+                        <exclude>**/.mvn/maven.config</exclude>
                         <exclude>dev-support/**</exclude>
                         <exclude>**/.gitignore/**</exclude>
                         <exclude>**/.project/**</exclude>
@@ -597,6 +696,7 @@
                         <exclude>*CHANGES*</exclude>
                         <exclude>**/ISSUES</exclude>
                         <exclude>**/patchprocess/**</exclude>
+                        <exclude>**/test/resources/**/*.base64</exclude>
                         <exclude>**/test/resources/**/*.json</exclude>
                         <exclude>**/test/resources/**/*.txt</exclude>
                         <exclude>**/test/resources/**/*.csv</exclude>
@@ -632,7 +732,11 @@
                         <exclude>**/docs/src/site/resources/ranger-logo.svg</exclude>
                         <exclude>**/docs/src/site/resources/override-banner.js</exclude>
                         <exclude>**/docs/src/site/resources/smooth-scroll.js</exclude>
+                        <exclude>**/docs/src/site/resources/js/jquery.min.js</exclude>
+                        <exclude>**/docs/src/site/resources/js/html5.js</exclude>
                         <exclude>**/importRole/*.json</exclude>
+                        <exclude>mkdocs/docs/assets/**</exclude>
+                        <exclude>mkdocs/requirements.txt</exclude>
                     </excludes>
                 </configuration>
                 <executions>
@@ -647,7 +751,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-antrun-plugin</artifactId>
-                <version>1.7</version>
+                <version>${maven-antrun-plugin.version}</version>
                 <executions>
                     <execution>
                         <goals>
@@ -800,6 +904,7 @@
             <name>${distMgmtStagingName}</name>
             <url>${distMgmtStagingUrl}</url>
         </repository>
+
     </distributionManagement>
     <profiles>
         <profile>
@@ -812,7 +917,11 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>audit-server</module>
                 <module>authz-api</module>
+                <module>authz-embedded</module>
+                <module>authz-remote</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <!--
                    'distro' should be the last module. If a module gets inserted after
@@ -827,6 +936,7 @@
                 <module>jisql</module>
                 <module>kms</module>
                 <module>knox-agent</module>
+                <module>pdp</module>
                 <module>plugin-atlas</module>
                 <module>plugin-elasticsearch</module>
                 <module>plugin-kafka</module>
@@ -851,6 +961,7 @@
                 <module>ranger-hbase-plugin-shim</module>
                 <module>ranger-hdfs-plugin-shim</module>
                 <module>ranger-hive-plugin-shim</module>
+                <module>ranger-kafka-client-auth</module>
                 <module>ranger-kafka-plugin-shim</module>
                 <module>ranger-kms-plugin-shim</module>
                 <module>ranger-knox-plugin-shim</module>
@@ -880,6 +991,7 @@
             <modules>
                 <module>agents-common</module>
                 <module>agents-cred</module>
+                <module>common-utils</module>
                 <module>intg</module>
                 <module>ranger-examples</module>
             </modules>
@@ -888,6 +1000,7 @@
             <id>ranger-admin</id>
             <modules>
                 <module>agents-common</module>
+                <module>common-utils</module>
                 <module>security-admin</module>
                 <module>ugsync-util</module>
             </modules>
@@ -899,6 +1012,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>hdfs-agent</module>
                 <module>ranger-hdfs-plugin-shim</module>
@@ -913,6 +1027,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>hive-agent</module>
                 <module>ranger-hive-plugin-shim</module>
@@ -927,6 +1042,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>hbase-agent</module>
                 <module>ranger-hbase-plugin-shim</module>
@@ -941,6 +1057,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>knox-agent</module>
                 <module>ranger-knox-plugin-shim</module>
@@ -955,6 +1072,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>ranger-plugin-classloader</module>
                 <module>ranger-storm-plugin-shim</module>
@@ -969,6 +1087,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>plugin-yarn</module>
                 <module>ranger-plugin-classloader</module>
@@ -983,6 +1102,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>plugin-ozone</module>
                 <module>ranger-ozone-plugin-shim</module>
@@ -997,8 +1117,10 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>plugin-kafka</module>
+                <module>ranger-kafka-client-auth</module>
                 <module>ranger-kafka-plugin-shim</module>
                 <module>ranger-plugin-classloader</module>
                 <module>ranger-util</module>
@@ -1011,6 +1133,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>plugin-solr</module>
                 <module>ranger-plugin-classloader</module>
@@ -1025,6 +1148,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>plugin-kms</module>
                 <module>ranger-kms-plugin-shim</module>
@@ -1039,6 +1163,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>plugin-atlas</module>
                 <module>ranger-atlas-plugin-shim</module>
@@ -1053,6 +1178,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>plugin-sqoop</module>
                 <module>ranger-plugin-classloader</module>
@@ -1067,6 +1193,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>plugin-kylin</module>
                 <module>ranger-kylin-plugin-shim</module>
@@ -1081,6 +1208,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>plugin-elasticsearch</module>
                 <module>ranger-elasticsearch-plugin-shim</module>
@@ -1095,6 +1223,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>plugin-presto</module>
                 <module>ranger-plugin-classloader</module>
@@ -1109,6 +1238,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>plugin-trino</module>
                 <module>ranger-plugin-classloader</module>
@@ -1122,6 +1252,7 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>plugin-nestedstructure</module>
                 <module>ranger-util</module>
@@ -1139,7 +1270,11 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>audit-server</module>
                 <module>authz-api</module>
+                <module>authz-embedded</module>
+                <module>authz-remote</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <!--
                    'distro' should be the last module. If a module gets inserted after
@@ -1154,6 +1289,7 @@
                 <module>jisql</module>
                 <module>kms</module>
                 <module>knox-agent</module>
+                <module>pdp</module>
                 <module>plugin-atlas</module>
                 <module>plugin-elasticsearch</module>
                 <module>plugin-kafka</module>
@@ -1178,6 +1314,7 @@
                 <module>ranger-hbase-plugin-shim</module>
                 <module>ranger-hdfs-plugin-shim</module>
                 <module>ranger-hive-plugin-shim</module>
+                <module>ranger-kafka-client-auth</module>
                 <module>ranger-kafka-plugin-shim</module>
                 <module>ranger-kms-plugin-shim</module>
                 <module>ranger-knox-plugin-shim</module>
@@ -1229,7 +1366,11 @@
                 <module>agents-common</module>
                 <module>agents-cred</module>
                 <module>agents-installer</module>
+                <module>audit-server</module>
                 <module>authz-api</module>
+                <module>authz-embedded</module>
+                <module>authz-remote</module>
+                <module>common-utils</module>
                 <module>credentialbuilder</module>
                 <module>embeddedwebserver</module>
                 <module>hbase-agent</module>
@@ -1239,6 +1380,7 @@
                 <module>jisql</module>
                 <module>kms</module>
                 <module>knox-agent</module>
+                <module>pdp</module>
                 <module>plugin-atlas</module>
                 <module>plugin-elasticsearch</module>
                 <module>plugin-kafka</module>
@@ -1261,6 +1403,7 @@
                 <module>ranger-hbase-plugin-shim</module>
                 <module>ranger-hdfs-plugin-shim</module>
                 <module>ranger-hive-plugin-shim</module>
+                <module>ranger-kafka-client-auth</module>
                 <module>ranger-kafka-plugin-shim</module>
                 <module>ranger-kms-plugin-shim</module>
                 <module>ranger-knox-plugin-shim</module>
@@ -1289,7 +1432,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
-                        <version>1.6</version>
+                        <version>${maven-gpg-plugin.version}</version>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>
@@ -1303,7 +1446,7 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-enforcer-plugin</artifactId>
-                        <version>1.4.1</version>
+                        <version>${maven-enforcer-plugin.version}</version>
                         <executions>
                             <execution>
                                 <id>enforce-maven</id>
@@ -1316,6 +1459,27 @@
                                             <version>${maven.version.required}</version>
                                         </requireMavenVersion>
                                     </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!--
+                        Plugin sortpom purpose is to avoid merge conflicts and maintain consistent ordering
+                        run command for new pom.xml: mvn com.github.ekryd.sortpom:sortpom-maven-plugin:sort
+                     -->
+                    <plugin>
+                        <groupId>com.github.ekryd.sortpom</groupId>
+                        <artifactId>sortpom-maven-plugin</artifactId>
+                        <version>4.0.0</version>
+                        <executions>
+                            <execution>
+                                <goals>
+                                    <goal>sort</goal>
+                                </goals>
+                                <configuration>
+                                    <predefinedSortOrder>recommended_2008_06</predefinedSortOrder>
+                                    <sortDependencies>groupId,artifactId</sortDependencies>
+                                    <keepBlankLines>true</keepBlankLines>
                                 </configuration>
                             </execution>
                         </executions>

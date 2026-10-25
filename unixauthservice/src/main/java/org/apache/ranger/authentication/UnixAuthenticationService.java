@@ -56,7 +56,7 @@ public class UnixAuthenticationService {
     private static final Logger LOG = LoggerFactory.getLogger(UnixAuthenticationService.class);
 
     private static final String serviceName                          = "UnixAuthenticationService";
-    private static final String SSL_ALGORITHM                        = "TLSv1.2";
+    private static final String SSL_ALGORITHM                        = "TLS";
     private static final String REMOTE_LOGIN_AUTH_SERVICE_PORT_PARAM = "ranger.usersync.port";
     private static final String SSL_KEYSTORE_PATH_PARAM              = "ranger.usersync.keystore.file";
     private static final String SSL_TRUSTSTORE_PATH_PARAM            = "ranger.usersync.truststore.file";
@@ -70,8 +70,19 @@ public class UnixAuthenticationService {
     private static final String SSL_ENABLED_PARAM                    = "ranger.usersync.ssl";
     private static final String CREDSTORE_FILENAME_PARAM             = "ranger.usersync.credstore.filename";
     private static final String[] UGSYNC_CONFIG_XML_FILES            = {"ranger-ugsync-default.xml", "ranger-ugsync-site.xml"};
+    private static final String UNIXAUTH_MAX_FAILED_ATTEMPTS_PARAM   = "ranger.usersync.unixauth.max.failed.attempts";
+    private static final String UNIXAUTH_ATTEMPT_WINDOW_MS_PARAM     = "ranger.usersync.unixauth.attempt.window.ms";
+    private static final String UNIXAUTH_LOCKOUT_DURATION_MS_PARAM   = "ranger.usersync.unixauth.lockout.duration.ms";
+    private static final String UNIXAUTH_REQUIRE_CLIENT_AUTH_PARAM   = "ranger.usersync.unixauth.require.client.auth";
+    private static final String UNIXAUTH_SOCKET_TIMEOUT_MS_PARAM     = "ranger.usersync.unixauth.socket.timeout.ms";
+    private static final String UNIXAUTH_ACCOUNT_FANOUT_ENABLED_PARAM        = "ranger.usersync.unixauth.account.fanout.enabled";
+    private static final String UNIXAUTH_ACCOUNT_DISTINCT_IP_THRESHOLD_PARAM = "ranger.usersync.unixauth.account.distinct.ip.threshold";
+    private static final String UNIXAUTH_ACCOUNT_WINDOW_MS_PARAM             = "ranger.usersync.unixauth.account.window.ms";
+    private static final String UNIXAUTH_ACCOUNT_BASE_DELAY_MS_PARAM         = "ranger.usersync.unixauth.account.base.delay.ms";
+    private static final String UNIXAUTH_ACCOUNT_MAX_DELAY_MS_PARAM          = "ranger.usersync.unixauth.account.max.delay.ms";
 
     private static boolean enableUnixAuth;
+    private static String unixBackend;
 
     private final List<String> adminUserList = new ArrayList<>();
 
@@ -87,25 +98,33 @@ public class UnixAuthenticationService {
     private UserSyncHAInitializerImpl userSyncHAInitializerImpl;
     private int portNum;
     private boolean sslEnabled;
+    private boolean requireClientAuth;
+    private LoginAttemptTracker loginAttemptTracker;
+    private int socketTimeoutMs;
 
     public UnixAuthenticationService() {
     }
 
     public static void main(String[] args) {
-        enableUnixAuth = Arrays.stream(args).anyMatch("-enableUnixAuth"::equalsIgnoreCase);
         UnixAuthenticationService service = new UnixAuthenticationService();
         service.userSyncHAInitializerImpl = UserSyncHAInitializerImpl.getInstance(UserGroupSyncConfig.getInstance().getUserGroupConfig());
         service.run();
     }
 
     public void run() {
+        boolean unixAuthServiceStarted = false;
         try {
+            UserGroupSyncConfig config = UserGroupSyncConfig.getInstance();
+            enableUnixAuth = config.getUserSyncUnixAuth();
+            unixBackend = config.getUnixBackend();
+
             LOG.info("Starting User Sync Service!");
             startUnixUserGroupSyncProcess();
             Thread.sleep(5000);
-            if (enableUnixAuth) {
+            if (enableUnixAuth && "passwd".equalsIgnoreCase(unixBackend)) {
                 LOG.info("Enabling Unix Auth Service!");
                 init();
+                unixAuthServiceStarted = true;
                 startService();
             } else {
                 LOG.info("Unix Auth Service Disabled!");
@@ -113,10 +132,17 @@ public class UnixAuthenticationService {
         } catch (Throwable t) {
             LOG.error("ERROR: Service: {}", serviceName, t);
         } finally {
-            LOG.info("Service: {} - STOPPED", serviceName);
-            if (this.userSyncHAInitializerImpl != null) {
-                LOG.info("Stopping curator leader latch service as main thread is closing");
-                this.userSyncHAInitializerImpl.stop();
+            /*
+             * Stop Curator leader election only when the Unix Auth listener is shutting down.
+             * When Unix Auth is disabled, this main thread returns but UserGroupSync keeps running
+             * and still depends on HA; stopping the leader latch here would mark every node active.
+             */
+            if (unixAuthServiceStarted) {
+                LOG.info("Service: {} - STOPPED", serviceName);
+                if (this.userSyncHAInitializerImpl != null) {
+                    LOG.info("Stopping curator leader latch service as Unix Auth service is closing");
+                    this.userSyncHAInitializerImpl.stop();
+                }
             }
         }
     }
@@ -193,6 +219,13 @@ public class UnixAuthenticationService {
                         LOG.debug("Disabling CipherSuite : [{}]", enabledCipherSuite);
                     }
                 }
+                if (requireClientAuth) {
+                    if (trustStoreKeyStore == null) {
+                        throw new RuntimeException("[" + UNIXAUTH_REQUIRE_CLIENT_AUTH_PARAM + "] is enabled but [" + SSL_TRUSTSTORE_PATH_PARAM + "] is not configured - a truststore is required to validate client certificates.");
+                    }
+                    LOG.info("Enabling TLS client certificate authentication for UnixAuth listener.");
+                    secureSocket.setNeedClientAuth(true);
+                }
                 if (!allowedCipherSuites.isEmpty()) {
                     secureSocket.setEnabledCipherSuites(allowedCipherSuites.toArray(new String[0]));
                 }
@@ -202,7 +235,12 @@ public class UnixAuthenticationService {
 
             try {
                 while ((client = socket.accept()) != null) {
-                    Thread clientValidatorThread = new Thread(new PasswordValidator(client));
+                    try {
+                        client.setSoTimeout(socketTimeoutMs);
+                    } catch (java.net.SocketException se) {
+                        LOG.warn("Failed to set socket timeout for connection from [{}]: {}", client.getInetAddress(), se.getMessage());
+                    }
+                    Thread clientValidatorThread = new Thread(new PasswordValidator(client, loginAttemptTracker));
                     clientValidatorThread.start();
                 }
             } catch (IOException e) {
@@ -308,6 +346,22 @@ public class UnixAuthenticationService {
         String enabledCipherSuites     = prop.getProperty("ranger.usersync.https.ssl.enabled.cipher.suites", "");
         enabledProtocolsList           = new ArrayList<>(Arrays.asList(enabledProtocols.toUpperCase().trim().split("\\s*,\\s*")));
         enabledCipherSuiteList         = new ArrayList<>(Arrays.asList(enabledCipherSuites.toUpperCase().trim().split("\\s*,\\s*")));
+        int  maxFailedAttempts = Integer.parseInt(prop.getProperty(UNIXAUTH_MAX_FAILED_ATTEMPTS_PARAM, "5"));
+        long attemptWindowMs   = Long.parseLong(prop.getProperty(UNIXAUTH_ATTEMPT_WINDOW_MS_PARAM, "60000"));
+        long lockoutDurationMs = Long.parseLong(prop.getProperty(UNIXAUTH_LOCKOUT_DURATION_MS_PARAM, "30000"));
+        socketTimeoutMs = Integer.parseInt(prop.getProperty(UNIXAUTH_SOCKET_TIMEOUT_MS_PARAM, "10000"));
+
+        boolean accountFanoutEnabled       = Boolean.parseBoolean(prop.getProperty(UNIXAUTH_ACCOUNT_FANOUT_ENABLED_PARAM, "true"));
+        int     accountDistinctIpThreshold = Integer.parseInt(prop.getProperty(UNIXAUTH_ACCOUNT_DISTINCT_IP_THRESHOLD_PARAM, "3"));
+        long    accountWindowMs            = Long.parseLong(prop.getProperty(UNIXAUTH_ACCOUNT_WINDOW_MS_PARAM, "60000"));
+        long    accountBaseDelayMs         = Long.parseLong(prop.getProperty(UNIXAUTH_ACCOUNT_BASE_DELAY_MS_PARAM, "200"));
+        long    accountMaxDelayMs          = Long.parseLong(prop.getProperty(UNIXAUTH_ACCOUNT_MAX_DELAY_MS_PARAM, "2000"));
+
+        loginAttemptTracker = new LoginAttemptTracker(maxFailedAttempts, attemptWindowMs, lockoutDurationMs, accountFanoutEnabled,
+                accountDistinctIpThreshold, accountWindowMs, accountBaseDelayMs, accountMaxDelayMs);
+
+        String requireClientAuthProp = prop.getProperty(UNIXAUTH_REQUIRE_CLIENT_AUTH_PARAM, "false");
+        requireClientAuth = requireClientAuthProp.trim().equalsIgnoreCase("true");
     }
 
     private InputStream getFileInputStream(String path) throws FileNotFoundException {

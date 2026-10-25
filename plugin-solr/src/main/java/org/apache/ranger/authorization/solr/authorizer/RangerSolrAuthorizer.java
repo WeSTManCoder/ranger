@@ -68,6 +68,8 @@ import java.util.Set;
 public class RangerSolrAuthorizer extends SearchComponent implements AuthorizationPlugin {
     private static final Logger logger = LoggerFactory.getLogger(RangerSolrAuthorizer.class);
 
+    private static final String PLUGIN_NOT_INITIALIZED_MSG = "Access denied: authorizer is not initialized.";
+
     private static volatile RangerBasePlugin solrPlugin;
 
     private final List<FieldToAttributeMapping> fieldAttributeMappings = new LinkedList<>();
@@ -100,18 +102,26 @@ public class RangerSolrAuthorizer extends SearchComponent implements Authorizati
     public void close() {
         logger.info("close() called");
 
+        RangerBasePlugin plugin = solrPlugin;
+
+        if (plugin == null) {
+            return;
+        }
+
         try {
-            solrPlugin.cleanup();
+            plugin.cleanup();
 
             /* Solr shutdown is not graceful so that JVM shutdown hooks
              * are not always invoked and the audit store are not flushed. So
              * we are forcing a cleanup here.
              */
-            if (solrPlugin.getAuditProviderFactory() != null) {
-                solrPlugin.getAuditProviderFactory().shutdown();
+            if (plugin.getAuditProviderFactory() != null) {
+                plugin.getAuditProviderFactory().shutdown();
             }
         } catch (Throwable t) {
             logger.error("Error cleaning up Ranger plugin. Ignoring error", t);
+        } finally {
+            solrPlugin = null;
         }
     }
 
@@ -124,6 +134,15 @@ public class RangerSolrAuthorizer extends SearchComponent implements Authorizati
      */
     @Override
     public AuthorizationResponse authorize(AuthorizationContext context) {
+        RangerBasePlugin solrPlugin = getPlugin();
+
+        if (solrPlugin == null) {
+            MiscUtil.logErrorMessageByInterval(logger, PLUGIN_NOT_INITIALIZED_MSG);
+            AuthorizationResponse resp = new AuthorizationResponse(503);
+            resp.setMessage(PLUGIN_NOT_INITIALIZED_MSG);
+            return resp;
+        }
+
         boolean isDenied = false;
 
         try {
@@ -164,10 +183,11 @@ public class RangerSolrAuthorizer extends SearchComponent implements Authorizati
             // At the end will we iterate this list and invoke Ranger to check for privileges.
             List<RangerAccessRequestImpl> rangerRequests = new ArrayList<>();
 
-            // The following logic is taken from Sentry See in SentrySolrPluginImpl.java.
+            Object handler = context.getHandler();
 
-            if (context.getHandler() instanceof PermissionNameProvider) {
-                PermissionNameProvider.Name perm = ((PermissionNameProvider) context.getHandler()).getPermissionName(context);
+            // The following logic is taken from Sentry See in SentrySolrPluginImpl.java.
+            if (handler instanceof PermissionNameProvider) {
+                PermissionNameProvider.Name perm = ((PermissionNameProvider) handler).getPermissionName(context);
 
                 switch (perm) {
                     case READ_PERM:
@@ -175,16 +195,16 @@ public class RangerSolrAuthorizer extends SearchComponent implements Authorizati
                         RangerSolrConstants.AccessType accessType = (perm == PermissionNameProvider.Name.READ_PERM) ? RangerSolrConstants.AccessType.QUERY : RangerSolrConstants.AccessType.UPDATE;
 
                         for (CollectionRequest req : context.getCollectionRequests()) {
-                            rangerRequests.add(createRequest(userName, userGroups, ip, eventTime, context, RangerSolrConstants.ResourceType.COLLECTION, req.collectionName, accessType));
+                            rangerRequests.add(createRequest(userName, userGroups, ip, eventTime, RangerSolrConstants.ResourceType.COLLECTION, req.collectionName, accessType));
                         }
                         break;
                     }
                     case SECURITY_EDIT_PERM: {
-                        rangerRequests.add(createAdminRequest(userName, userGroups, ip, eventTime, context, RangerSolrConstants.AdminType.SECURITY, RangerSolrConstants.AccessType.UPDATE));
+                        rangerRequests.add(createAdminRequest(userName, userGroups, ip, eventTime, RangerSolrConstants.AdminType.SECURITY, RangerSolrConstants.AccessType.UPDATE));
                         break;
                     }
                     case SECURITY_READ_PERM: {
-                        rangerRequests.add(createAdminRequest(userName, userGroups, ip, eventTime, context, RangerSolrConstants.AdminType.SECURITY, RangerSolrConstants.AccessType.QUERY));
+                        rangerRequests.add(createAdminRequest(userName, userGroups, ip, eventTime, RangerSolrConstants.AdminType.SECURITY, RangerSolrConstants.AccessType.QUERY));
                         break;
                     }
                     case CORE_READ_PERM:
@@ -198,52 +218,52 @@ public class RangerSolrAuthorizer extends SearchComponent implements Authorizati
                                 ? RangerSolrConstants.AccessType.QUERY : RangerSolrConstants.AccessType.UPDATE;
 
                         // add admin permissions to the ranger request list
-                        rangerRequests.add(createAdminRequest(userName, userGroups, ip, eventTime, context, adminType, accessType));
+                        rangerRequests.add(createAdminRequest(userName, userGroups, ip, eventTime, adminType, accessType));
 
                         // add collection level permissions to the ranger request list
                         Map<String, RangerSolrConstants.AccessType> collectionsForAdminOpMap = SolrAuthzUtil.getCollectionsForAdminOp(context);
 
                         String finalIp = ip;
 
-                        collectionsForAdminOpMap.forEach((k, v) -> rangerRequests.add(createRequest(userName, userGroups, finalIp, eventTime, context, RangerSolrConstants.ResourceType.COLLECTION, k, v)));
+                        collectionsForAdminOpMap.forEach((k, v) -> rangerRequests.add(createRequest(userName, userGroups, finalIp, eventTime, RangerSolrConstants.ResourceType.COLLECTION, k, v)));
                         break;
                     }
                     case CONFIG_EDIT_PERM: {
                         for (String s : SolrAuthzUtil.getConfigAuthorizables(context)) {
-                            rangerRequests.add(createRequest(userName, userGroups, ip, eventTime, context, RangerSolrConstants.ResourceType.CONFIG, s, RangerSolrConstants.AccessType.UPDATE));
+                            rangerRequests.add(createRequest(userName, userGroups, ip, eventTime, RangerSolrConstants.ResourceType.CONFIG, s, RangerSolrConstants.AccessType.UPDATE));
                         }
                         break;
                     }
                     case CONFIG_READ_PERM: {
                         for (String s : SolrAuthzUtil.getConfigAuthorizables(context)) {
-                            rangerRequests.add(createRequest(userName, userGroups, ip, eventTime, context, RangerSolrConstants.ResourceType.CONFIG, s, RangerSolrConstants.AccessType.QUERY));
+                            rangerRequests.add(createRequest(userName, userGroups, ip, eventTime, RangerSolrConstants.ResourceType.CONFIG, s, RangerSolrConstants.AccessType.QUERY));
                         }
                         break;
                     }
                     case SCHEMA_EDIT_PERM: {
                         for (String s : SolrAuthzUtil.getSchemaAuthorizables(context)) {
-                            rangerRequests.add(createRequest(userName, userGroups, ip, eventTime, context, RangerSolrConstants.ResourceType.SCHEMA, s, RangerSolrConstants.AccessType.UPDATE));
+                            rangerRequests.add(createRequest(userName, userGroups, ip, eventTime, RangerSolrConstants.ResourceType.SCHEMA, s, RangerSolrConstants.AccessType.UPDATE));
                         }
                         break;
                     }
                     case SCHEMA_READ_PERM: {
                         for (String s : SolrAuthzUtil.getSchemaAuthorizables(context)) {
-                            rangerRequests.add(createRequest(userName, userGroups, ip, eventTime, context, RangerSolrConstants.ResourceType.SCHEMA, s, RangerSolrConstants.AccessType.QUERY));
+                            rangerRequests.add(createRequest(userName, userGroups, ip, eventTime, RangerSolrConstants.ResourceType.SCHEMA, s, RangerSolrConstants.AccessType.QUERY));
                         }
                         break;
                     }
                     case METRICS_HISTORY_READ_PERM:
                     case METRICS_READ_PERM: {
-                        rangerRequests.add(createAdminRequest(userName, userGroups, ip, eventTime, context, RangerSolrConstants.AdminType.METRICS, RangerSolrConstants.AccessType.QUERY));
+                        rangerRequests.add(createAdminRequest(userName, userGroups, ip, eventTime, RangerSolrConstants.AdminType.METRICS, RangerSolrConstants.AccessType.QUERY));
                         break;
                     }
                     case AUTOSCALING_READ_PERM:
                     case AUTOSCALING_HISTORY_READ_PERM: {
-                        rangerRequests.add(createAdminRequest(userName, userGroups, ip, eventTime, context, RangerSolrConstants.AdminType.AUTOSCALING, RangerSolrConstants.AccessType.QUERY));
+                        rangerRequests.add(createAdminRequest(userName, userGroups, ip, eventTime, RangerSolrConstants.AdminType.AUTOSCALING, RangerSolrConstants.AccessType.QUERY));
                         break;
                     }
                     case AUTOSCALING_WRITE_PERM: {
-                        rangerRequests.add(createAdminRequest(userName, userGroups, ip, eventTime, context, RangerSolrConstants.AdminType.AUTOSCALING, RangerSolrConstants.AccessType.UPDATE));
+                        rangerRequests.add(createAdminRequest(userName, userGroups, ip, eventTime, RangerSolrConstants.AdminType.AUTOSCALING, RangerSolrConstants.AccessType.UPDATE));
                         break;
                     }
                     case ALL: {
@@ -251,7 +271,7 @@ public class RangerSolrAuthorizer extends SearchComponent implements Authorizati
                     }
                 }
             } else {
-                logger.warn("Request Handler: {} is not an instance of PermissionNameProvider and so we are not able to authenticate the request. Check SOLR-11623 for more information.", context.getHandler().getClass().getName());
+                logger.warn("Request Handler: {} is not an instance of PermissionNameProvider and so we are not able to authenticate the request. Check SOLR-11623 for more information.", handler == null ? null : handler.getClass().getName());
             }
 
             /*
@@ -307,49 +327,7 @@ public class RangerSolrAuthorizer extends SearchComponent implements Authorizati
     @Override
     public void init(Map<String, Object> initInfo) {
         logger.info("init()");
-
-        try {
-            RangerBasePlugin me = solrPlugin;
-
-            if (me == null) {
-                synchronized (RangerSolrAuthorizer.class) {
-                    me = solrPlugin;
-
-                    logger.info("RangerSolrAuthorizer(): init called");
-
-                    if (me == null) {
-                        authToJAASFile();
-
-                        logger.info("Creating RangerSolrPlugin");
-
-                        me = new RangerBasePlugin("solr", "solr");
-
-                        logger.info("Calling solrPlugin.init()");
-
-                        me.init();
-                        me.setResultProcessor(new RangerSolrAuditHandler(me.getConfig()));
-
-                        solrPlugin = me;
-                    }
-                }
-            }
-
-            useProxyIP    = solrPlugin.getConfig().getBoolean(RangerSolrConstants.PROP_USE_PROXY_IP, useProxyIP);
-            proxyIPHeader = solrPlugin.getConfig().get(RangerSolrConstants.PROP_PROXY_IP_HEADER, proxyIPHeader);
-
-            // First get from the -D property
-            solrAppName = System.getProperty("solr.kerberos.jaas.appname", solrAppName);
-
-            // Override if required from Ranger properties
-            solrAppName = solrPlugin.getConfig().get(RangerSolrConstants.PROP_SOLR_APP_NAME, solrAppName);
-
-            logger.info("init(): useProxyIP={}", useProxyIP);
-            logger.info("init(): proxyIPHeader={}", proxyIPHeader);
-            logger.info("init(): solrAppName={}", solrAppName);
-            logger.info("init(): KerberosName.rules={}", MiscUtil.getKerberosNamesRules());
-        } catch (Throwable t) {
-            logger.error("Error creating and initializing RangerBasePlugin()", t);
-        }
+        getPlugin();
     }
 
     @Override
@@ -529,6 +507,43 @@ public class RangerSolrAuthorizer extends SearchComponent implements Authorizati
         return "Handle Query Document Authorization";
     }
 
+    private RangerBasePlugin getPlugin() {
+        RangerBasePlugin ret = solrPlugin;
+
+        if (ret == null) {
+            synchronized (RangerSolrAuthorizer.class) {
+                ret = solrPlugin;
+
+                if (ret == null) {
+                    try {
+                        initializeSolrPlugin();
+
+                        ret = solrPlugin;
+                    } catch (Throwable t) {
+                        logger.error("Error creating and initializing RangerBasePlugin()", t);
+                    }
+                }
+            }
+        }
+
+        return ret;
+    }
+
+    private void initializeSolrPlugin() {
+        authToJAASFile();
+
+        RangerBasePlugin plugin = new RangerBasePlugin("solr", "solr");
+
+        plugin.init();
+        plugin.setResultProcessor(new RangerSolrAuditHandler(plugin.getConfig()));
+
+        useProxyIP    = plugin.getConfig().getBoolean(RangerSolrConstants.PROP_USE_PROXY_IP, useProxyIP);
+        proxyIPHeader = plugin.getConfig().get(RangerSolrConstants.PROP_PROXY_IP_HEADER, proxyIPHeader);
+        solrAppName   = plugin.getConfig().get(RangerSolrConstants.PROP_SOLR_APP_NAME, System.getProperty("solr.kerberos.jaas.appname", solrAppName));
+
+        solrPlugin = plugin;
+    }
+
     private void authToJAASFile() {
         try {
             MiscUtil.setUGIFromJAASConfig(solrAppName);
@@ -624,13 +639,12 @@ public class RangerSolrAuthorizer extends SearchComponent implements Authorizati
      * @param userGroups
      * @param ip
      * @param eventTime
-     * @param context
      * @param resourceType - the type of resource we are requesting permission to access (collection, config, field, etc.)
      * @param resourceName - the name of the resource (e.g. collection) we are requesting permission to access
      * @param accessType - the access type (QUERY, UPDATE, ALL (*)) we are requesting
      * @return RangerAccessRequestImpl
      */
-    private RangerAccessRequestImpl createRequest(String userName, Set<String> userGroups, String ip, Date eventTime, AuthorizationContext context, RangerSolrConstants.ResourceType resourceType, String resourceName, RangerSolrConstants.AccessType accessType) {
+    private RangerAccessRequestImpl createRequest(String userName, Set<String> userGroups, String ip, Date eventTime, RangerSolrConstants.ResourceType resourceType, String resourceName, RangerSolrConstants.AccessType accessType) {
         String                   action         = accessType.toString();
         RangerAccessRequestImpl  rangerRequest  = createBaseRequest(userName, userGroups, ip, eventTime);
         RangerAccessResourceImpl rangerResource = new RangerAccessResourceImpl();
@@ -644,8 +658,8 @@ public class RangerSolrAuthorizer extends SearchComponent implements Authorizati
         return rangerRequest;
     }
 
-    private RangerAccessRequestImpl createAdminRequest(String userName, Set<String> userGroups, String ip, Date eventTime, AuthorizationContext context, RangerSolrConstants.AdminType adminType, RangerSolrConstants.AccessType accessType) {
-        return createRequest(userName, userGroups, ip, eventTime, context, RangerSolrConstants.ResourceType.ADMIN, adminType.toString(), accessType);
+    private RangerAccessRequestImpl createAdminRequest(String userName, Set<String> userGroups, String ip, Date eventTime, RangerSolrConstants.AdminType adminType, RangerSolrConstants.AccessType accessType) {
+        return createRequest(userName, userGroups, ip, eventTime, RangerSolrConstants.ResourceType.ADMIN, adminType.toString(), accessType);
     }
 
     private RangerAccessRequestImpl createQueryRequest(String userName, Set<String> userGroups, String ip, Date eventTime, SolrQueryRequest queryRequest) {

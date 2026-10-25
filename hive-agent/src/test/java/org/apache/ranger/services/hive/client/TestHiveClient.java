@@ -41,22 +41,25 @@ import java.lang.reflect.Method;
 import java.security.Permission;
 import java.security.PrivilegedExceptionAction;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.Driver;
+import java.sql.DriverManager;
 import java.sql.DriverPropertyInfo;
 import java.sql.ResultSet;
 import java.sql.SQLFeatureNotSupportedException;
 import java.sql.SQLTimeoutException;
-import java.sql.Statement;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -71,6 +74,9 @@ import static org.mockito.Mockito.when;
 @ExtendWith(MockitoExtension.class)
 @TestMethodOrder(MethodOrderer.MethodName.class)
 public class TestHiveClient {
+    private static final AtomicBoolean TRACKED_CLASS_INITIALIZED = new AtomicBoolean(false);
+    private static final String        TRACKED_CLASS_NAME        = TestHiveClient.class.getName() + "$TrackedClass";
+
     @Test
     public void test01_connectionTestEmptyDbListSetsFailureMessage() throws Exception {
         try (MockedConstruction<HiveClient> cons = Mockito.mockConstruction(HiveClient.class, (mock, ctx) -> {
@@ -220,12 +226,12 @@ public class TestHiveClient {
         Field fCon = HiveClient.class.getDeclaredField("con");
         fCon.setAccessible(true);
         Connection con  = Mockito.mock(Connection.class);
-        Statement  stat = Mockito.mock(Statement.class);
+        DatabaseMetaData metadata = Mockito.mock(DatabaseMetaData.class);
         ResultSet  rs   = Mockito.mock(ResultSet.class);
-        when(con.createStatement()).thenReturn(stat);
-        when(stat.executeQuery(Mockito.anyString())).thenReturn(rs);
+        when(con.getMetaData()).thenReturn(metadata);
+        when(metadata.getSchemas(Mockito.isNull(), Mockito.anyString())).thenReturn(rs);
         when(rs.next()).thenReturn(true, false);
-        when(rs.getString(1)).thenReturn("db1");
+        when(rs.getString("TABLE_SCHEM")).thenReturn("db1");
         fCon.set(client, con);
         List<String> out = client.getDatabaseList("db*", null);
         assertEquals(Collections.singletonList("db1"), out);
@@ -251,17 +257,15 @@ public class TestHiveClient {
         Field fCon = HiveClient.class.getDeclaredField("con");
         fCon.setAccessible(true);
         Connection con  = Mockito.mock(Connection.class);
-        Statement  stat = Mockito.mock(Statement.class);
+        DatabaseMetaData metadata = Mockito.mock(DatabaseMetaData.class);
         ResultSet  rs   = Mockito.mock(ResultSet.class);
-        when(con.createStatement()).thenReturn(stat);
-        when(stat.execute(Mockito.eq("use db1"))).thenReturn(true);
-        when(stat.executeQuery(Mockito.anyString())).thenReturn(rs);
+        when(con.getMetaData()).thenReturn(metadata);
+        when(metadata.getTables(Mockito.isNull(), Mockito.eq("db1"), Mockito.anyString(), Mockito.any())).thenReturn(rs);
         when(rs.next()).thenReturn(true, true, false);
-        when(rs.getString(1)).thenReturn("t1", "t2");
+        when(rs.getString("TABLE_NAME")).thenReturn("t1", "t2");
         fCon.set(client, con);
         List<String> out = client.getTableList("t*", Collections.singletonList("db1"), Collections.singletonList("t2"));
         assertEquals(Collections.singletonList("t1"), out);
-        Mockito.verify(stat, Mockito.atLeastOnce()).execute(Mockito.eq("use db1"));
     }
 
     @Test
@@ -273,10 +277,9 @@ public class TestHiveClient {
         Field fCon = HiveClient.class.getDeclaredField("con");
         fCon.setAccessible(true);
         Connection con  = Mockito.mock(Connection.class);
-        Statement  stat = Mockito.mock(Statement.class);
-        when(con.createStatement()).thenReturn(stat);
-        when(stat.execute(Mockito.anyString())).thenReturn(true);
-        when(stat.executeQuery(Mockito.anyString())).thenThrow(new SQLTimeoutException("timeout"));
+        DatabaseMetaData metadata = Mockito.mock(DatabaseMetaData.class);
+        when(con.getMetaData()).thenReturn(metadata);
+        when(metadata.getTables(Mockito.isNull(), Mockito.anyString(), Mockito.anyString(), Mockito.any())).thenThrow(new SQLTimeoutException("timeout"));
         fCon.set(client, con);
         assertThrows(HadoopException.class, () -> client.getTableList("t*", Collections.singletonList("db1"), null));
     }
@@ -290,13 +293,12 @@ public class TestHiveClient {
         Field fCon = HiveClient.class.getDeclaredField("con");
         fCon.setAccessible(true);
         Connection con  = Mockito.mock(Connection.class);
-        Statement  stat = Mockito.mock(Statement.class);
+        DatabaseMetaData metadata = Mockito.mock(DatabaseMetaData.class);
         ResultSet  rs   = Mockito.mock(ResultSet.class);
-        when(con.createStatement()).thenReturn(stat);
-        when(stat.execute(Mockito.eq("use db1"))).thenReturn(true);
-        when(stat.executeQuery(Mockito.eq("describe  t1"))).thenReturn(rs);
+        when(con.getMetaData()).thenReturn(metadata);
+        when(metadata.getColumns(Mockito.isNull(), Mockito.eq("db1"), Mockito.eq("t1"), Mockito.anyString())).thenReturn(rs);
         when(rs.next()).thenReturn(true, true, false);
-        when(rs.getString(1)).thenReturn("c1", "c2");
+        when(rs.getString("COLUMN_NAME")).thenReturn("c1", "c2");
         fCon.set(client, con);
         List<String> out = client.getColumnList("c*", Collections.singletonList("db1"), Collections.singletonList("t1"), Collections.singletonList("c2"));
         assertEquals(Collections.singletonList("c1"), out);
@@ -311,10 +313,9 @@ public class TestHiveClient {
         Field fCon = HiveClient.class.getDeclaredField("con");
         fCon.setAccessible(true);
         Connection con  = Mockito.mock(Connection.class);
-        Statement  stat = Mockito.mock(Statement.class);
-        when(con.createStatement()).thenReturn(stat);
-        when(stat.execute(Mockito.anyString())).thenReturn(true);
-        when(stat.executeQuery(Mockito.anyString())).thenThrow(new SQLTimeoutException("timeout"));
+        DatabaseMetaData metadata = Mockito.mock(DatabaseMetaData.class);
+        when(con.getMetaData()).thenReturn(metadata);
+        when(metadata.getColumns(Mockito.isNull(), Mockito.anyString(), Mockito.anyString(), Mockito.anyString())).thenThrow(new SQLTimeoutException("timeout"));
         fCon.set(client, con);
         assertThrows(HadoopException.class, () -> client.getColumnList("c*", Collections.singletonList("db1"), Collections.singletonList("t1"), null));
     }
@@ -462,17 +463,219 @@ public class TestHiveClient {
         Field          fCfg   = Class.forName("org.apache.ranger.plugin.client.BaseClient").getDeclaredField("configHolder");
         fCfg.setAccessible(true);
         HadoopConfigHolder cfg = Mockito.mock(HadoopConfigHolder.class);
-        Mockito.when(cfg.isEnableHiveMetastoreLookup()).thenReturn(false);
-        Mockito.when(cfg.getHiveSiteFilePath()).thenReturn("");
-        Mockito.when(cfg.isKerberosAuthentication()).thenReturn(false);
-        Mockito.when(cfg.getUserName()).thenReturn("u");
-        Mockito.when(cfg.getPassword()).thenReturn("p");
+        Mockito.lenient().when(cfg.isEnableHiveMetastoreLookup()).thenReturn(false);
+        Mockito.lenient().when(cfg.getHiveSiteFilePath()).thenReturn("");
+        Mockito.lenient().when(cfg.isKerberosAuthentication()).thenReturn(false);
+        Mockito.lenient().when(cfg.getUserName()).thenReturn("u");
+        Mockito.lenient().when(cfg.getPassword()).thenReturn("p");
         fCfg.set(client, cfg);
         try (MockedStatic<Subject> subj = Mockito.mockStatic(Subject.class)) {
             subj.when(() -> Subject.doAs(Mockito.any(Subject.class), Mockito.any(PrivilegedExceptionAction.class))).thenReturn(null);
             Method m = HiveClient.class.getDeclaredMethod("initHive");
             m.setAccessible(true);
             assertDoesNotThrow(() -> m.invoke(client));
+        }
+    }
+
+    @Test
+    public void test26_validateSqlIdentifier_validInput() throws Exception {
+        NoopHiveClient client = new NoopHiveClient("svc", new HashMap<>());
+        Method m = HiveClient.class.getSuperclass().getDeclaredMethod("validateSqlIdentifier", String.class, String.class);
+        m.setAccessible(true);
+
+        m.invoke(client, "test_db123", "database");
+        m.invoke(client, "table_name", "table");
+        m.invoke(client, "col*", "column pattern");
+        m.invoke(client, "db%", "database pattern");
+        m.invoke(client, "a_b_c_123", "identifier");
+    }
+
+    @Test
+    public void test27_validateSqlIdentifier_sqlInjectionAttempts() throws Exception {
+        NoopHiveClient client = new NoopHiveClient("svc", new HashMap<>());
+        Method m = HiveClient.class.getSuperclass().getDeclaredMethod("validateSqlIdentifier", String.class, String.class);
+        m.setAccessible(true);
+
+        assertThrows(HadoopException.class, () -> {
+            try {
+                m.invoke(client, "test\" OR 1=1 --", "database");
+            } catch (Exception e) {
+                throw e.getCause();
+            }
+        }, "Should reject double quote injection");
+
+        assertThrows(HadoopException.class, () -> {
+            try {
+                m.invoke(client, "testdb; DROP TABLE users; --", "database");
+            } catch (Exception e) {
+                throw e.getCause();
+            }
+        }, "Should reject semicolon command injection");
+
+        assertThrows(HadoopException.class, () -> {
+            try {
+                m.invoke(client, "test'; DROP DATABASE production; --", "table");
+            } catch (Exception e) {
+                throw e.getCause();
+            }
+        }, "Should reject single quote command injection");
+
+        assertThrows(HadoopException.class, () -> {
+            try {
+                m.invoke(client, "test\n--malicious", "identifier");
+            } catch (Exception e) {
+                throw e.getCause();
+            }
+        }, "Should reject newline injection");
+
+        assertThrows(HadoopException.class, () -> {
+            try {
+                m.invoke(client, "test`malicious`", "identifier");
+            } catch (Exception e) {
+                throw e.getCause();
+            }
+        }, "Should reject backtick injection");
+
+        assertThrows(HadoopException.class, () -> {
+            try {
+                m.invoke(client, "test$(whoami)", "identifier");
+            } catch (Exception e) {
+                throw e.getCause();
+            }
+        }, "Should reject shell command injection");
+
+        assertThrows(HadoopException.class, () -> {
+            try {
+                m.invoke(client, "../../../etc/passwd", "identifier");
+            } catch (Exception e) {
+                throw e.getCause();
+            }
+        }, "Should reject path traversal");
+    }
+
+    @Test
+    public void test28_convertToSqlPattern_convertsWildcards() throws Exception {
+        NoopHiveClient client = new NoopHiveClient("svc", new HashMap<>());
+        Method m = HiveClient.class.getSuperclass().getDeclaredMethod("convertToSqlPattern", String.class);
+        m.setAccessible(true);
+
+        String result1 = (String) m.invoke(client, "test*");
+        assertEquals("test%", result1, "Should convert * to %");
+
+        String result2 = (String) m.invoke(client, "*");
+        assertEquals("%", result2, "Should convert single * to %");
+
+        String result3 = (String) m.invoke(client, "test*pattern*");
+        assertEquals("test%pattern%", result3, "Should convert multiple *");
+
+        String result4 = (String) m.invoke(client, (Object) null);
+        assertEquals("%", result4, "Should handle null as %");
+
+        String result5 = (String) m.invoke(client, "");
+        assertEquals("%", result5, "Should handle empty string as %");
+    }
+
+    @Test
+    public void test29_getDatabaseList_rejectsInjection() throws Exception {
+        NoopHiveClient client = new NoopHiveClient("svc", new HashMap<>());
+        Field fFlag = HiveClient.class.getDeclaredField("enableHiveMetastoreLookup");
+        fFlag.setAccessible(true);
+        fFlag.set(client, false);
+        Field fCon = HiveClient.class.getDeclaredField("con");
+        fCon.setAccessible(true);
+        Connection con = Mockito.mock(Connection.class);
+        fCon.set(client, con);
+
+        assertThrows(HadoopException.class, () -> client.getDatabaseList("testdb\"; DROP DATABASE production; --", null), "Should reject SQL injection in database pattern");
+    }
+
+    @Test
+    public void test30_getTableList_rejectsInjectionInDbName() throws Exception {
+        NoopHiveClient client = new NoopHiveClient("svc", new HashMap<>());
+        Field fFlag = HiveClient.class.getDeclaredField("enableHiveMetastoreLookup");
+        fFlag.setAccessible(true);
+        fFlag.set(client, false);
+        Field fCon = HiveClient.class.getDeclaredField("con");
+        fCon.setAccessible(true);
+        Connection con = Mockito.mock(Connection.class);
+        fCon.set(client, con);
+
+        assertThrows(HadoopException.class, () -> client.getTableList("valid", Collections.singletonList("testdb; DROP TABLE users; --"), null), "Should reject SQL injection in database name");
+    }
+
+    @Test
+    public void test31_getColumnList_rejectsInjectionInTableName() throws Exception {
+        NoopHiveClient client = new NoopHiveClient("svc", new HashMap<>());
+        Field fFlag = HiveClient.class.getDeclaredField("enableHiveMetastoreLookup");
+        fFlag.setAccessible(true);
+        fFlag.set(client, false);
+        Field fCon = HiveClient.class.getDeclaredField("con");
+        fCon.setAccessible(true);
+        Connection con = Mockito.mock(Connection.class);
+        fCon.set(client, con);
+
+        assertThrows(HadoopException.class, () -> client.getColumnList("valid", Collections.singletonList("db1"), Collections.singletonList("test'; DROP TABLE users; --"), null), "Should reject SQL injection in table name");
+    }
+
+    @Test
+    public void test32_initConnection_rejectsNonHiveUrlScheme() throws Exception {
+        assertJdbcConfigRejected("org.apache.hive.jdbc.HiveDriver", "jdbc:mysql://address=(host=localhost)(port=3306)(autoDeserialize=true)/db", "jdbc.url must start with");
+        assertJdbcConfigRejected("org.apache.hive.jdbc.HiveDriver", "jdbc:postgresql://localhost:5432/db", "jdbc.url must start with");
+        assertJdbcConfigRejected("org.apache.hive.jdbc.HiveDriver", "JDBC:HIVE2://localhost:10000", "jdbc.url must start with");
+    }
+
+    @Test
+    public void test33_initConnection_rejectsDriverClassNotInAllowList() throws Exception {
+        assertJdbcConfigRejected(TRACKED_CLASS_NAME, "jdbc:hive2://localhost:10000", "jdbc.driverClassName must be one of");
+        assertFalse(TRACKED_CLASS_INITIALIZED.get(), "driver class must not be loaded when it is not in the allowed list");
+    }
+
+    @Test
+    public void test34_initConnection_rejectsUnsafeUrlParameter() throws Exception {
+        assertJdbcConfigRejected("org.apache.hive.jdbc.HiveDriver", "jdbc:hive2://localhost:10000/default;socketFactory=com.example.Evil", "prohibited parameter");
+        assertJdbcConfigRejected("org.apache.hive.jdbc.HiveDriver", "jdbc:hive2://localhost:10000/default%3BsocketFactory=com.example.Evil", "prohibited parameter");
+    }
+
+    @Test
+    public void test35_initConnection_rejectsEmbeddedHiveUrl() throws Exception {
+        assertJdbcConfigRejected("org.apache.hive.jdbc.HiveDriver", "jdbc:hive2:///", "jdbc.url must include a host");
+        assertJdbcConfigRejected("org.apache.hive.jdbc.HiveDriver", "jdbc:hive2://;", "jdbc.url must include a host");
+        assertJdbcConfigRejected("org.apache.hive.jdbc.HiveDriver", "jdbc:hive2://?x=y", "jdbc.url must include a host");
+        assertJdbcConfigRejected("org.apache.hive.jdbc.HiveDriver", "jdbc:hive2://:10000/default", "jdbc.url must include a host");
+    }
+
+    private void assertJdbcConfigRejected(String driverClassName, String url, String expectedMessage) throws Exception {
+        NoopHiveClient client = new NoopHiveClient("svc", new HashMap<>());
+        Field          fCfg   = Class.forName("org.apache.ranger.plugin.client.BaseClient").getDeclaredField("configHolder");
+        fCfg.setAccessible(true);
+        HadoopConfigHolder cfg         = Mockito.mock(HadoopConfigHolder.class);
+        Properties         rangerProps = new Properties();
+        rangerProps.setProperty("jdbc.driverClassName", driverClassName);
+        rangerProps.setProperty("jdbc.url", url);
+        when(cfg.getRangerSection()).thenReturn(rangerProps);
+        fCfg.set(client, cfg);
+        Method m = HiveClient.class.getDeclaredMethod("initConnection", String.class, String.class);
+        m.setAccessible(true);
+
+        try (MockedStatic<DriverManager> dmStatic = Mockito.mockStatic(DriverManager.class)) {
+            HadoopException excp = assertThrows(HadoopException.class, () -> {
+                try {
+                    m.invoke(client, "u", "p");
+                } catch (InvocationTargetException ite) {
+                    throw ite.getCause();
+                }
+            });
+
+            assertTrue(excp.getMessage().contains(expectedMessage), excp.getMessage());
+            dmStatic.verify(() -> DriverManager.registerDriver(Mockito.any(Driver.class)), Mockito.never());
+            dmStatic.verify(() -> DriverManager.getConnection(Mockito.anyString()), Mockito.never());
+            dmStatic.verify(() -> DriverManager.getConnection(Mockito.anyString(), Mockito.anyString(), Mockito.anyString()), Mockito.never());
+        }
+    }
+
+    public static class TrackedClass {
+        static {
+            TRACKED_CLASS_INITIALIZED.set(true);
         }
     }
 

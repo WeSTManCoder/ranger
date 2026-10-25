@@ -32,7 +32,8 @@ import org.apache.ranger.plugin.util.SearchFilter;
 import org.apache.ranger.security.context.RangerContextHolder;
 import org.apache.ranger.security.context.RangerSecurityContext;
 import org.apache.ranger.view.RangerServiceList;
-import org.junit.Assert;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
@@ -56,15 +57,21 @@ import java.util.Map;
 public class TestRangerServiceServiceBase {
     private static final Long Id = 8L;
     @InjectMocks
-    RangerServiceService rangerServiceService = new RangerServiceService();
+    RangerServiceService rangerServiceService;
     @Mock
-    RangerDaoManager     daoManager;
+    RangerDaoManager     daoMgr;
     @Mock
     RangerSearchUtil     searchUtil;
     @Mock
     RangerBizUtil        bizUtil;
     @Mock
-    BaseDao<XXService>   baseDao;
+    BaseDao<XXService>   entityDao;
+
+    @BeforeEach
+    void wireRangerServiceServiceFields() {
+        rangerServiceService.daoMgr    = daoMgr;
+        rangerServiceService.entityDao = entityDao;
+    }
 
     public void setup() {
         RangerSecurityContext context = new RangerSecurityContext();
@@ -82,22 +89,22 @@ public class TestRangerServiceServiceBase {
         XXService       service          = service();
         int             operationContext = 1;
 
-        Mockito.when(daoManager.getXXServiceDef()).thenReturn(xServiceDefDao);
+        Mockito.when(daoMgr.getXXServiceDef()).thenReturn(xServiceDefDao);
         Mockito.when(xServiceDefDao.findByName(rangerService.getType())).thenReturn(xServiceDef);
 
         XXService dbService = rangerServiceService.mapViewToEntityBean(rangerService, service, operationContext);
-        Assert.assertNotNull(dbService);
-        Assert.assertEquals(dbService, service);
-        Assert.assertEquals(dbService.getDescription(), service.getDescription());
-        Assert.assertEquals(dbService.getGuid(), service.getGuid());
-        Assert.assertEquals(dbService.getName(), service.getName());
-        Assert.assertEquals(dbService.getAddedByUserId(), service.getAddedByUserId());
-        Assert.assertEquals(dbService.getId(), service.getId());
-        Assert.assertEquals(dbService.getVersion(), service.getVersion());
-        Assert.assertEquals(dbService.getType(), service.getType());
-        Assert.assertEquals(dbService.getUpdatedByUserId(), service.getUpdatedByUserId());
+        Assertions.assertNotNull(dbService);
+        Assertions.assertEquals(dbService, service);
+        Assertions.assertEquals(dbService.getDescription(), service.getDescription());
+        Assertions.assertEquals(dbService.getGuid(), service.getGuid());
+        Assertions.assertEquals(dbService.getName(), service.getName());
+        Assertions.assertEquals(dbService.getAddedByUserId(), service.getAddedByUserId());
+        Assertions.assertEquals(dbService.getId(), service.getId());
+        Assertions.assertEquals(dbService.getVersion(), service.getVersion());
+        Assertions.assertEquals(dbService.getType(), service.getType());
+        Assertions.assertEquals(dbService.getUpdatedByUserId(), service.getUpdatedByUserId());
 
-        Mockito.verify(daoManager).getXXServiceDef();
+        Mockito.verify(daoMgr).getXXServiceDef();
     }
 
     @Test
@@ -116,23 +123,23 @@ public class TestRangerServiceServiceBase {
         serviceVersionInfo.setTagVersion(service.getTagVersion());
         serviceVersionInfo.setPolicyUpdateTime(service.getTagUpdateTime());
 
-        Mockito.when(daoManager.getXXServiceVersionInfo()).thenReturn(xServiceVersionInfoDao);
+        Mockito.when(daoMgr.getXXServiceVersionInfo()).thenReturn(xServiceVersionInfoDao);
         Mockito.when(xServiceVersionInfoDao.findByServiceId(service.getId())).thenReturn(serviceVersionInfo);
 
-        Mockito.when(daoManager.getXXServiceDef()).thenReturn(xServiceDefDao);
+        Mockito.when(daoMgr.getXXServiceDef()).thenReturn(xServiceDefDao);
         Mockito.when(xServiceDefDao.getById(service.getType())).thenReturn(xServiceDef);
 
         RangerService dbRangerService = rangerServiceService.mapEntityToViewBean(rangerService, service);
-        Assert.assertNotNull(dbRangerService);
-        Assert.assertEquals(dbRangerService, rangerService);
-        Assert.assertEquals(dbRangerService.getDescription(), rangerService.getDescription());
-        Assert.assertEquals(dbRangerService.getGuid(), rangerService.getGuid());
-        Assert.assertEquals(dbRangerService.getName(), rangerService.getName());
-        Assert.assertEquals(dbRangerService.getId(), rangerService.getId());
-        Assert.assertEquals(dbRangerService.getVersion(), rangerService.getVersion());
-        Assert.assertEquals(dbRangerService.getType(), rangerService.getType());
+        Assertions.assertNotNull(dbRangerService);
+        Assertions.assertEquals(dbRangerService, rangerService);
+        Assertions.assertEquals(dbRangerService.getDescription(), rangerService.getDescription());
+        Assertions.assertEquals(dbRangerService.getGuid(), rangerService.getGuid());
+        Assertions.assertEquals(dbRangerService.getName(), rangerService.getName());
+        Assertions.assertEquals(dbRangerService.getId(), rangerService.getId());
+        Assertions.assertEquals(dbRangerService.getVersion(), rangerService.getVersion());
+        Assertions.assertEquals(dbRangerService.getType(), rangerService.getType());
 
-        Mockito.verify(daoManager).getXXServiceDef();
+        Mockito.verify(daoMgr).getXXServiceDef();
     }
 
     @Test
@@ -142,7 +149,7 @@ public class TestRangerServiceServiceBase {
         searchFilter.setParam(SearchFilter.SERVICE_NAME, "serviceName");
 
         RangerServiceList dbRangerServiceList = rangerServiceService.searchRangerServices(searchFilter);
-        Assert.assertNotNull(dbRangerServiceList);
+        Assertions.assertNotNull(dbRangerServiceList);
     }
 
     private RangerService rangerService() {

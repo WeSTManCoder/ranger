@@ -23,7 +23,6 @@ import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.io.FilenameUtils;
 import org.apache.commons.io.IOCase;
 import org.apache.commons.lang3.StringUtils;
-import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.ranger.authorization.hadoop.config.RangerAdminConfig;
 import org.apache.ranger.common.AppConstants;
 import org.apache.ranger.common.ContextUtil;
@@ -33,6 +32,7 @@ import org.apache.ranger.common.PropertiesUtil;
 import org.apache.ranger.common.RESTErrorUtil;
 import org.apache.ranger.common.RangerCommonEnums;
 import org.apache.ranger.common.RangerConstants;
+import org.apache.ranger.common.RangerSuperUserConfig;
 import org.apache.ranger.common.StringUtil;
 import org.apache.ranger.common.UserSessionBase;
 import org.apache.ranger.db.RangerDaoManager;
@@ -86,7 +86,10 @@ public class RangerBizUtil {
     public static final  String  AUDIT_STORE_RDBMS          = "DB";
     public static final  String  AUDIT_STORE_SOLR           = "solr";
     public static final  String  AUDIT_STORE_ELASTIC_SEARCH = "elasticSearch";
+    public static final  String  AUDIT_STORE_OPENSEARCH     = "opensearch";
     public static final  String  AUDIT_STORE_CLOUD_WATCH    = "cloudwatch";
+    // login id used by the Ranger Admin health readiness endpoint
+    public static final  String  HEALTHCHECK_USERNAME       = RangerAdminConfig.getInstance().get("ranger.admin.healthcheck.username", "healthcheck");
     public static final  boolean BATCH_CLEAR_ENABLED        = PropertiesUtil.getBooleanProperty("ranger.jpa.jdbc.batch-clear.enable", true);
     public static final  int     POLICY_BATCH_SIZE          = PropertiesUtil.getIntProperty("ranger.jpa.jdbc.batch-clear.size", 10);
     public static final  int     BATCH_PERSIST_SIZE         = PropertiesUtil.getIntProperty("ranger.jpa.jdbc.batch-persist.size", 500);
@@ -110,6 +113,10 @@ public class RangerBizUtil {
     @Autowired
     UserMgr userMgr;
 
+    /** Used for config super-user group lookup in {@link #isUserRangerAdmin(String)}. */
+    @Autowired
+    XUserMgr xUserMgr;
+
     @Autowired
     XUserService xUserService;
 
@@ -125,7 +132,7 @@ public class RangerBizUtil {
     Set<Class<?>> groupEditableClasses;
     int           maxDisplayNameLength = 150;
     boolean       enableResourceAccessControl;
-    String        auditDBType = AUDIT_STORE_RDBMS;
+    String        auditDBType = AUDIT_STORE_SOLR;
 
     public RangerBizUtil() {
         RangerAdminConfig config = RangerAdminConfig.getInstance();
@@ -546,22 +553,16 @@ public class RangerBizUtil {
     }
 
     public void failUnauthenticatedIfNotAllowed() throws Exception {
-        if (UserGroupInformation.isSecurityEnabled()) {
-            UserSessionBase currentUserSession = ContextUtil.getCurrentUserSession();
-
-            if (currentUserSession == null && !allowUnauthenticatedAccessInSecureEnvironment) {
-                throw new Exception("Unauthenticated access not allowed");
-            }
+        UserSessionBase currentUserSession = ContextUtil.getCurrentUserSession();
+        if (currentUserSession == null && !allowUnauthenticatedAccessInSecureEnvironment) {
+            throw new Exception("Unauthenticated access not allowed");
         }
     }
 
     public void failUnauthenticatedDownloadIfNotAllowed() throws Exception {
-        if (UserGroupInformation.isSecurityEnabled()) {
-            UserSessionBase currentUserSession = ContextUtil.getCurrentUserSession();
-
-            if (currentUserSession == null && !allowUnauthenticatedDownloadAccessInSecureEnvironment) {
-                throw new Exception("Unauthenticated access not allowed");
-            }
+        UserSessionBase currentUserSession = ContextUtil.getCurrentUserSession();
+        if (currentUserSession == null && !allowUnauthenticatedDownloadAccessInSecureEnvironment) {
+            throw new Exception("Unauthenticated access not allowed");
         }
     }
 
@@ -1040,35 +1041,35 @@ public class RangerBizUtil {
             throw restErrorUtil.createRESTException("UserSession cannot be null, only KeyAdmin can create/update/delete " + objType, MessageEnums.OPER_NO_PERMISSION);
         }
 
-        if (session.isKeyAdmin() && !EmbeddedServiceDefsUtil.KMS_IMPL_CLASS_NAME.equals(implClassName)) {
+        boolean isKmsServiceType = EmbeddedServiceDefsUtil.KMS_IMPL_CLASS_NAME.equals(implClassName);
+
+        if (session.isKeyAdmin() && !isKmsServiceType) {
             throw restErrorUtil.createRESTException("KeyAdmin can create/update/delete only KMS " + objType, MessageEnums.OPER_NO_PERMISSION);
         }
 
-        // TODO: As of now we are allowing SYS_ADMIN to create/update/read/delete all the
-        // services including KMS
-
-        if ("Service-Def".equalsIgnoreCase(objType) && session.isUserAdmin() && EmbeddedServiceDefsUtil.KMS_IMPL_CLASS_NAME.equals(implClassName)) {
+        if (session.isUserAdmin() && isKmsServiceType && "Service-Def".equalsIgnoreCase(objType)) {
             throw restErrorUtil.createRESTException("System Admin cannot create/update/delete KMS " + objType, MessageEnums.OPER_NO_PERMISSION);
         }
     }
 
     public boolean checkUserAccessible(VXUser vXUser) {
         boolean            isAccessible = true;
-        Collection<String> roleList     = userMgr.getRolesByLoginId(vXUser.getName());
+        Collection<String> roleList     = userMgr.getDBRolesByLoginId(vXUser.getName());
+        Collection<String> payloadRoles = vXUser.getUserRoleList();
 
         if (isKeyAdmin()) {
-            if (vXUser.getUserRoleList().contains(RangerConstants.ROLE_SYS_ADMIN)
-                    || vXUser.getUserRoleList().contains(RangerConstants.ROLE_ADMIN_AUDITOR)
-                    || roleList.contains(RangerConstants.ROLE_SYS_ADMIN)
-                    || roleList.contains(RangerConstants.ROLE_ADMIN_AUDITOR)) {
+            if (StringUtil.containsIgnoreCase(payloadRoles, RangerConstants.ROLE_SYS_ADMIN)
+                    || StringUtil.containsIgnoreCase(payloadRoles, RangerConstants.ROLE_ADMIN_AUDITOR)
+                    || StringUtil.containsIgnoreCase(roleList, RangerConstants.ROLE_SYS_ADMIN)
+                    || StringUtil.containsIgnoreCase(roleList, RangerConstants.ROLE_ADMIN_AUDITOR)) {
                 isAccessible = false;
             }
         }
         if (isAdmin()) {
-            if (vXUser.getUserRoleList().contains(RangerConstants.ROLE_KEY_ADMIN)
-                    || vXUser.getUserRoleList().contains(RangerConstants.ROLE_KEY_ADMIN_AUDITOR)
-                    || roleList.contains(RangerConstants.ROLE_KEY_ADMIN)
-                    || roleList.contains(RangerConstants.ROLE_KEY_ADMIN_AUDITOR)) {
+            if (StringUtil.containsIgnoreCase(payloadRoles, RangerConstants.ROLE_KEY_ADMIN)
+                    || StringUtil.containsIgnoreCase(payloadRoles, RangerConstants.ROLE_KEY_ADMIN_AUDITOR)
+                    || StringUtil.containsIgnoreCase(roleList, RangerConstants.ROLE_KEY_ADMIN)
+                    || StringUtil.containsIgnoreCase(roleList, RangerConstants.ROLE_KEY_ADMIN_AUDITOR)) {
                 isAccessible = false;
             }
         }
@@ -1117,7 +1118,28 @@ public class RangerBizUtil {
         return isUserInConfigParameter(rangerService, ServiceREST.Allowed_User_List_For_Grant_Revoke, userName);
     }
 
+    /**
+     * True when {@code username} is a full Ranger admin: DB sys/admin role,
+     * config super-user ({@code ranger.admin.super.users/groups}), or the
+     * current session is a Ranger admin ({@link UserSessionBase#isUserAdmin()}).
+     */
     public boolean isUserRangerAdmin(String username) {
+        if (StringUtils.isBlank(username)) {
+            return false;
+        }
+
+        UserSessionBase userSession = ContextUtil.getCurrentUserSession();
+
+        // Ranger admin on current session (DB sys admin or config super-user).
+        if (userSession != null && username.equalsIgnoreCase(userSession.getLoginId()) && userSession.isUserAdmin()) {
+            return true;
+        }
+
+        // Config super-user when no session context (e.g. grantor checks).
+        if (isConfigSuperUser(username)) {
+            return true;
+        }
+
         boolean isAdmin = false;
 
         try {
@@ -1131,6 +1153,34 @@ public class RangerBizUtil {
         }
 
         return isAdmin;
+    }
+
+    /* True when username matches ranger.admin.super.users/groups, regardless of
+     * the current session and of the user's DB portal roles. */
+    public boolean isConfigSuperUser(String username) {
+        if (StringUtils.isBlank(username)) {
+            return false;
+        } else if (RangerSuperUserConfig.isSuperUser(username)) {
+            return true;
+        } else if (RangerSuperUserConfig.isSuperGroupsConfigured() && xUserMgr != null) {
+            return RangerSuperUserConfig.isSuperUser(username, xUserMgr.getGroupsForUser(username));
+        }
+
+        return false;
+    }
+
+    public boolean isHealthCheckUser(String user) {
+        return HEALTHCHECK_USERNAME.equalsIgnoreCase(user);
+    }
+
+    /**
+     * True when the current session is a config super-user per
+     * {@code ranger.admin.super.users} / {@code ranger.admin.super.groups}.
+     */
+    public boolean isSuperUser() {
+        UserSessionBase currentUserSession = ContextUtil.getCurrentUserSession();
+
+        return currentUserSession != null && currentUserSession.isSuperUser();
     }
 
     public boolean isUserServiceAdmin(RangerService rangerService, String userName) {
@@ -1184,13 +1234,15 @@ public class RangerBizUtil {
         UserSessionBase session = ContextUtil.getCurrentUserSession();
 
         if (session != null) {
-            if (session.isAuditKeyAdmin() || session.isAuditUserAdmin()) {
-                VXResponse vXResponse = new VXResponse();
+            if (!session.isSuperUser()) {
+                if (session.isAuditKeyAdmin() || session.isAuditUserAdmin()) {
+                    VXResponse vXResponse = new VXResponse();
 
-                vXResponse.setStatusCode(HttpServletResponse.SC_FORBIDDEN);
-                vXResponse.setMsgDesc("Operation denied. LoggedInUser=" + session.getXXPortalUser().getId() + " ,isn't permitted to perform the action.");
+                    vXResponse.setStatusCode(HttpServletResponse.SC_FORBIDDEN);
+                    vXResponse.setMsgDesc("Operation denied. LoggedInUser=" + session.getXXPortalUser().getId() + " ,isn't permitted to perform the action.");
 
-                throw restErrorUtil.generateRESTException(vXResponse);
+                    throw restErrorUtil.generateRESTException(vXResponse);
+                }
             }
         } else {
             VXResponse vXResponse = new VXResponse();

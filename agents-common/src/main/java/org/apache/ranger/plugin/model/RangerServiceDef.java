@@ -23,7 +23,11 @@ import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonAutoDetect.Visibility;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import org.apache.commons.collections.CollectionUtils;
+import org.apache.commons.collections.MapUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.ranger.authorization.utils.StringUtil;
+import org.apache.ranger.plugin.store.AbstractServiceStore;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -31,6 +35,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @JsonAutoDetect(fieldVisibility = Visibility.ANY)
@@ -62,7 +67,11 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
     private List<RangerEnumDef>            enums;
     private RangerDataMaskDef              dataMaskDef;
     private RangerRowFilterDef             rowFilterDef;
+    private List<RangerConstraintDef>      constraintDefs;
     private List<RangerAccessTypeDef>      markerAccessTypes; // read-only
+
+    private transient volatile boolean normalized;
+    private transient volatile String  accessTypesNormalizedForComponent;
 
     public RangerServiceDef() {
         this(null, null, null, null, null, null, null, null, null, null, null, null, null);
@@ -102,6 +111,7 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
         setEnums(enums);
         setDataMaskDef(dataMaskDef);
         setRowFilterDef(rowFilterDef);
+        setConstraintDefs(null);
         setMarkerAccessTypes(null);
     }
 
@@ -120,6 +130,8 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
     public void updateFrom(RangerServiceDef other) {
         super.updateFrom(other);
 
+        clearNormalized();
+
         setName(other.getName());
         setDisplayName(other.getDisplayName());
         setImplClass(other.getImplClass());
@@ -136,7 +148,39 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
         setEnums(other.getEnums());
         setDataMaskDef(other.getDataMaskDef());
         setRowFilterDef(other.getRowFilterDef());
+        setConstraintDefs(other.getConstraintDefs());
         setMarkerAccessTypes(other.getMarkerAccessTypes());
+    }
+
+    public RangerServiceDef normalize() {
+        if (!normalized) {
+            synchronized (this) {
+                if (!normalized) {
+                    normalizeInPlace();
+
+                    normalized = true;
+                }
+            }
+        }
+
+        return this;
+    }
+
+    private void clearNormalized() {
+        normalized = false;
+        accessTypesNormalizedForComponent = null;
+    }
+
+    public RangerServiceDef normalizeAccessTypeDefs(String componentType) {
+        if (StringUtils.isNotBlank(componentType) && !componentType.equals(accessTypesNormalizedForComponent)) {
+            synchronized (this) {
+                if (!componentType.equals(accessTypesNormalizedForComponent)) {
+                    normalizeAccessTypeDefsInPlace(componentType);
+                    accessTypesNormalizedForComponent = componentType;
+                }
+            }
+        }
+        return this;
     }
 
     /**
@@ -295,6 +339,8 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
         if (resources != null) {
             this.resources.addAll(resources);
         }
+
+        clearNormalized();
     }
 
     /**
@@ -321,6 +367,8 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
         if (accessTypes != null) {
             this.accessTypes.addAll(accessTypes);
         }
+
+        clearNormalized();
     }
 
     /**
@@ -407,6 +455,8 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 
     public void setDataMaskDef(RangerDataMaskDef dataMaskDef) {
         this.dataMaskDef = dataMaskDef == null ? new RangerDataMaskDef() : dataMaskDef;
+
+        clearNormalized();
     }
 
     public RangerRowFilterDef getRowFilterDef() {
@@ -415,6 +465,28 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 
     public void setRowFilterDef(RangerRowFilterDef rowFilterDef) {
         this.rowFilterDef = rowFilterDef == null ? new RangerRowFilterDef() : rowFilterDef;
+
+        clearNormalized();
+    }
+
+    public List<RangerConstraintDef> getConstraintDefs() {
+        return constraintDefs;
+    }
+
+    public void setConstraintDefs(List<RangerConstraintDef> constraintDefs) {
+        if (this.constraintDefs == null) {
+            this.constraintDefs = new ArrayList<>();
+        }
+
+        if (this.constraintDefs == constraintDefs) {
+            return;
+        }
+
+        this.constraintDefs.clear();
+
+        if (constraintDefs != null) {
+            this.constraintDefs.addAll(constraintDefs);
+        }
     }
 
     public List<RangerAccessTypeDef> getMarkerAccessTypes() {
@@ -443,6 +515,263 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 
     public void setDisplayName(String displayName) {
         this.displayName = displayName;
+    }
+
+    private void normalizeInPlace() {
+        normalizeDataMaskDef();
+        normalizeRowFilterDef();
+    }
+
+    private void normalizeDataMaskDef() {
+        if (dataMaskDef != null) {
+            List<RangerResourceDef>   dataMaskResources   = dataMaskDef.getResources();
+            List<RangerAccessTypeDef> dataMaskAccessTypes = dataMaskDef.getAccessTypes();
+
+            if (CollectionUtils.isNotEmpty(dataMaskResources)) {
+                List<RangerResourceDef> processedDefs = new ArrayList<>(dataMaskResources.size());
+
+                for (RangerResourceDef dataMaskResource : dataMaskResources) {
+                    RangerResourceDef processedDef = dataMaskResource;
+
+                    for (RangerResourceDef resourceDef : resources) {
+                        if (StringUtils.equals(resourceDef.getName(), dataMaskResource.getName())) {
+                            processedDef = mergeResourceDef(resourceDef, dataMaskResource);
+
+                            break;
+                        }
+                    }
+
+                    processedDefs.add(processedDef);
+                }
+
+                dataMaskDef.setResources(processedDefs);
+            }
+
+            if (CollectionUtils.isNotEmpty(dataMaskAccessTypes)) {
+                List<RangerAccessTypeDef> processedDefs = new ArrayList<>(accessTypes.size());
+
+                for (RangerAccessTypeDef dataMaskAccessType : dataMaskAccessTypes) {
+                    RangerAccessTypeDef processedDef = dataMaskAccessType;
+
+                    for (RangerAccessTypeDef accessType : accessTypes) {
+                        if (StringUtils.equals(accessType.getName(), dataMaskAccessType.getName())) {
+                            processedDef = mergeAccessTypeDef(accessType, dataMaskAccessType);
+
+                            break;
+                        }
+                    }
+
+                    processedDefs.add(processedDef);
+                }
+
+                dataMaskDef.setAccessTypes(processedDefs);
+            }
+        }
+    }
+
+    private void normalizeRowFilterDef() {
+        if (rowFilterDef != null) {
+            List<RangerResourceDef>   rowFilterResources   = rowFilterDef.getResources();
+            List<RangerAccessTypeDef> rowFilterAccessTypes = rowFilterDef.getAccessTypes();
+
+            if (CollectionUtils.isNotEmpty(rowFilterResources)) {
+                List<RangerResourceDef> processedDefs = new ArrayList<>(rowFilterResources.size());
+
+                for (RangerResourceDef rowFilterResource : rowFilterResources) {
+                    RangerResourceDef processedDef = rowFilterResource;
+
+                    for (RangerResourceDef resourceDef : resources) {
+                        if (StringUtils.equals(resourceDef.getName(), rowFilterResource.getName())) {
+                            processedDef = mergeResourceDef(resourceDef, rowFilterResource);
+
+                            break;
+                        }
+                    }
+
+                    processedDefs.add(processedDef);
+                }
+
+                rowFilterDef.setResources(processedDefs);
+            }
+
+            if (CollectionUtils.isNotEmpty(rowFilterAccessTypes)) {
+                List<RangerAccessTypeDef> processedDefs = new ArrayList<>(accessTypes.size());
+
+                for (RangerAccessTypeDef rowFilterAccessType : rowFilterAccessTypes) {
+                    RangerAccessTypeDef processedDef = rowFilterAccessType;
+
+                    for (RangerAccessTypeDef accessType : accessTypes) {
+                        if (StringUtils.equals(accessType.getName(), rowFilterAccessType.getName())) {
+                            processedDef = mergeAccessTypeDef(accessType, rowFilterAccessType);
+
+                            break;
+                        }
+                    }
+
+                    processedDefs.add(processedDef);
+                }
+
+                rowFilterDef.setAccessTypes(processedDefs);
+            }
+        }
+    }
+
+    private void normalizeAccessTypeDefsInPlace(String componentType) {
+        normalizeAccessTypeDefList(this.accessTypes, componentType);
+        normalizeAccessTypeDefList(this.markerAccessTypes, componentType);
+
+        if (this.dataMaskDef != null) {
+            normalizeAccessTypeDefList(this.dataMaskDef.getAccessTypes(), componentType);
+        }
+
+        if (this.rowFilterDef != null) {
+            normalizeAccessTypeDefList(this.rowFilterDef.getAccessTypes(), componentType);
+        }
+    }
+
+    private static void normalizeAccessTypeDefList(List<RangerAccessTypeDef> accessTypeDefs, String componentType) {
+        if (CollectionUtils.isNotEmpty(accessTypeDefs)) {
+            String                    prefix                 = componentType + AbstractServiceStore.COMPONENT_ACCESSTYPE_SEPARATOR;
+            List<RangerAccessTypeDef> unneededAccessTypeDefs = null;
+
+            for (RangerAccessTypeDef accessTypeDef : accessTypeDefs) {
+                String accessType = accessTypeDef.getName();
+
+                if (StringUtils.startsWith(accessType, prefix)) {
+                    String newAccessType = StringUtils.removeStart(accessType, prefix);
+
+                    accessTypeDef.setName(newAccessType);
+                } else if (StringUtils.contains(accessType, AbstractServiceStore.COMPONENT_ACCESSTYPE_SEPARATOR)) {
+                    if (unneededAccessTypeDefs == null) {
+                        unneededAccessTypeDefs = new ArrayList<>();
+                    }
+
+                    unneededAccessTypeDefs.add(accessTypeDef);
+
+                    continue;
+                }
+
+                Collection<String> impliedGrants = accessTypeDef.getImpliedGrants();
+
+                if (CollectionUtils.isNotEmpty(impliedGrants)) {
+                    Set<String> newImpliedGrants = new HashSet<>();
+
+                    for (String impliedGrant : impliedGrants) {
+                        if (StringUtils.startsWith(impliedGrant, prefix)) {
+                            String newImpliedGrant = StringUtils.removeStart(impliedGrant, prefix);
+
+                            newImpliedGrants.add(newImpliedGrant);
+                        } else if (!StringUtils.contains(impliedGrant, AbstractServiceStore.COMPONENT_ACCESSTYPE_SEPARATOR)) {
+                            newImpliedGrants.add(impliedGrant);
+                        }
+                    }
+
+                    accessTypeDef.setImpliedGrants(newImpliedGrants);
+                }
+            }
+
+            if (unneededAccessTypeDefs != null) {
+                accessTypeDefs.removeAll(unneededAccessTypeDefs);
+            }
+        }
+    }
+
+    private RangerResourceDef mergeResourceDef(RangerResourceDef base, RangerResourceDef delta) {
+        RangerResourceDef ret = new RangerResourceDef(base);
+
+        // retain base values for: itemId, name, type, level, parent, lookupSupported
+
+        if (Boolean.TRUE.equals(delta.getMandatory())) {
+            ret.setMandatory(delta.getMandatory());
+        }
+
+        if (delta.getRecursiveSupported() != null) {
+            ret.setRecursiveSupported(delta.getRecursiveSupported());
+        }
+
+        if (delta.getExcludesSupported() != null) {
+            ret.setExcludesSupported(delta.getExcludesSupported());
+        }
+
+        if (StringUtils.isNotEmpty(delta.getMatcher())) {
+            ret.setMatcher(delta.getMatcher());
+        }
+
+        if (MapUtils.isNotEmpty(delta.getMatcherOptions())) {
+            if (ret.getMatcherOptions() == null) {
+                ret.setMatcherOptions(new HashMap<>());
+            }
+
+            for (Map.Entry<String, String> e : delta.getMatcherOptions().entrySet()) {
+                ret.getMatcherOptions().put(e.getKey(), e.getValue());
+            }
+        }
+
+        if (StringUtils.isNotEmpty(delta.getValidationRegEx())) {
+            ret.setValidationRegEx(delta.getValidationRegEx());
+        }
+
+        if (StringUtils.isNotEmpty(delta.getValidationMessage())) {
+            ret.setValidationMessage(delta.getValidationMessage());
+        }
+
+        ret.setUiHint(delta.getUiHint());
+
+        if (StringUtils.isNotEmpty(delta.getLabel())) {
+            ret.setLabel(delta.getLabel());
+        }
+
+        if (StringUtils.isNotEmpty(delta.getDescription())) {
+            ret.setDescription(delta.getDescription());
+        }
+
+        if (StringUtils.isNotEmpty(delta.getRbKeyLabel())) {
+            ret.setRbKeyLabel(delta.getRbKeyLabel());
+        }
+
+        if (StringUtils.isNotEmpty(delta.getRbKeyDescription())) {
+            ret.setRbKeyDescription(delta.getRbKeyDescription());
+        }
+
+        if (StringUtils.isNotEmpty(delta.getRbKeyValidationMessage())) {
+            ret.setRbKeyValidationMessage(delta.getRbKeyValidationMessage());
+        }
+
+        if (CollectionUtils.isNotEmpty(delta.getAccessTypeRestrictions())) {
+            ret.setAccessTypeRestrictions(delta.getAccessTypeRestrictions());
+        }
+
+        boolean copyLeafValue = false;
+
+        if (ret.getIsValidLeaf() != null) {
+            if (!ret.getIsValidLeaf().equals(delta.getIsValidLeaf())) {
+                copyLeafValue = true;
+            }
+        } else if (delta.getIsValidLeaf() != null) {
+            copyLeafValue = true;
+        }
+
+        if (copyLeafValue) {
+            ret.setIsValidLeaf(delta.getIsValidLeaf());
+        }
+
+        return ret;
+    }
+
+    private RangerAccessTypeDef mergeAccessTypeDef(RangerAccessTypeDef base, RangerAccessTypeDef delta) {
+        RangerAccessTypeDef ret = new RangerAccessTypeDef(base);
+
+        // retain base values for: itemId, name, impliedGrants
+
+        if (StringUtils.isNotEmpty(delta.getLabel())) {
+            ret.setLabel(delta.getLabel());
+        }
+
+        if (StringUtils.isNotEmpty(delta.getRbKeyLabel())) {
+            ret.setRbKeyLabel(delta.getRbKeyLabel());
+        }
+
+        return ret;
     }
 
     public void dedupStrings(Map<String, String> strTbl) {
@@ -496,6 +825,12 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
 
         if (rowFilterDef != null) {
             rowFilterDef.dedupStrings(strTbl);
+        }
+
+        if (constraintDefs != null) {
+            for (RangerConstraintDef constraintDef : constraintDefs) {
+                constraintDef.dedupStrings(strTbl);
+            }
         }
 
         if (markerAccessTypes != null) {
@@ -604,6 +939,16 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
         sb.append("rowFilterDef={");
         if (rowFilterDef != null) {
             rowFilterDef.toString(sb);
+        }
+        sb.append("} ");
+
+        sb.append("constraintDefs={");
+        if (constraintDefs != null) {
+            for (RangerConstraintDef constraintDef : constraintDefs) {
+                if (constraintDef != null) {
+                    constraintDef.toString(sb);
+                }
+            }
         }
         sb.append("} ");
 
@@ -3426,6 +3771,441 @@ public class RangerServiceDef extends RangerBaseModelObject implements java.io.S
             } else {
                 return resources.equals(other.resources);
             }
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder sb = new StringBuilder();
+
+            toString(sb);
+
+            return sb.toString();
+        }
+    }
+
+    @JsonAutoDetect(fieldVisibility = Visibility.ANY)
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class RangerConstraintDef implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
+        private Long                           itemId;
+        private String                         name;
+        private String                         label;
+        private String                         description;
+        private String                         rbKeyLabel;
+        private String                         rbKeyDescription;
+        private List<String>                   resources;
+        private List<String>                   accessTypes;
+        private List<RangerConstraintParamDef> parameters;
+        private Map<String, String>            options;
+
+        public RangerConstraintDef() {
+            setResources(null);
+            setAccessTypes(null);
+            setParameters(null);
+            setOptions(null);
+        }
+
+        public RangerConstraintDef(RangerConstraintDef other) {
+            setItemId(other.getItemId());
+            setName(other.getName());
+            setLabel(other.getLabel());
+            setDescription(other.getDescription());
+            setRbKeyLabel(other.getRbKeyLabel());
+            setRbKeyDescription(other.getRbKeyDescription());
+            setResources(other.getResources());
+            setAccessTypes(other.getAccessTypes());
+            setParameters(other.getParameters());
+            setOptions(other.getOptions() == null ? null : new HashMap<>(other.getOptions()));
+        }
+
+        public Long getItemId() {
+            return itemId;
+        }
+
+        public void setItemId(Long itemId) {
+            this.itemId = itemId;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(String label) {
+            this.label = label;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+
+        public void setDescription(String description) {
+            this.description = description;
+        }
+
+        public String getRbKeyLabel() {
+            return rbKeyLabel;
+        }
+
+        public void setRbKeyLabel(String rbKeyLabel) {
+            this.rbKeyLabel = rbKeyLabel;
+        }
+
+        public String getRbKeyDescription() {
+            return rbKeyDescription;
+        }
+
+        public void setRbKeyDescription(String rbKeyDescription) {
+            this.rbKeyDescription = rbKeyDescription;
+        }
+
+        public List<String> getResources() {
+            return resources;
+        }
+
+        public void setResources(List<String> resources) {
+            if (this.resources == null) {
+                this.resources = new ArrayList<>();
+            }
+
+            if (this.resources == resources) {
+                return;
+            }
+
+            this.resources.clear();
+
+            if (resources != null) {
+                this.resources.addAll(resources);
+            }
+        }
+
+        public List<String> getAccessTypes() {
+            return accessTypes;
+        }
+
+        public void setAccessTypes(List<String> accessTypes) {
+            if (this.accessTypes == null) {
+                this.accessTypes = new ArrayList<>();
+            }
+
+            if (this.accessTypes == accessTypes) {
+                return;
+            }
+
+            this.accessTypes.clear();
+
+            if (accessTypes != null) {
+                this.accessTypes.addAll(accessTypes);
+            }
+        }
+
+        public List<RangerConstraintParamDef> getParameters() {
+            return parameters;
+        }
+
+        public void setParameters(List<RangerConstraintParamDef> parameters) {
+            if (this.parameters == null) {
+                this.parameters = new ArrayList<>();
+            }
+
+            if (this.parameters == parameters) {
+                return;
+            }
+
+            this.parameters.clear();
+
+            if (parameters != null) {
+                this.parameters.addAll(parameters);
+            }
+        }
+
+        public Map<String, String> getOptions() {
+            return options;
+        }
+
+        public void setOptions(Map<String, String> options) {
+            this.options = options == null ? new HashMap<>() : options;
+        }
+
+        public void dedupStrings(Map<String, String> strTbl) {
+            name             = StringUtil.dedupString(name, strTbl);
+            label            = StringUtil.dedupString(label, strTbl);
+            description      = StringUtil.dedupString(description, strTbl);
+            rbKeyLabel       = StringUtil.dedupString(rbKeyLabel, strTbl);
+            rbKeyDescription = StringUtil.dedupString(rbKeyDescription, strTbl);
+            resources        = StringUtil.dedupStringsList(resources, strTbl);
+            accessTypes      = StringUtil.dedupStringsList(accessTypes, strTbl);
+            options          = StringUtil.dedupStringsMap(options, strTbl);
+
+            if (parameters != null) {
+                for (RangerConstraintParamDef parameter : parameters) {
+                    parameter.dedupStrings(strTbl);
+                }
+            }
+        }
+
+        public StringBuilder toString(StringBuilder sb) {
+            sb.append("RangerConstraintDef={");
+            sb.append("itemId={").append(itemId).append("} ");
+            sb.append("name={").append(name).append("} ");
+            sb.append("label={").append(label).append("} ");
+            sb.append("description={").append(description).append("} ");
+            sb.append("rbKeyLabel={").append(rbKeyLabel).append("} ");
+            sb.append("rbKeyDescription={").append(rbKeyDescription).append("} ");
+
+            sb.append("resources={");
+            if (resources != null) {
+                for (String resource : resources) {
+                    if (resource != null) {
+                        sb.append(resource).append(" ");
+                    }
+                }
+            }
+            sb.append("} ");
+
+            sb.append("accessTypes={");
+            if (accessTypes != null) {
+                for (String accessType : accessTypes) {
+                    if (accessType != null) {
+                        sb.append(accessType).append(" ");
+                    }
+                }
+            }
+            sb.append("} ");
+
+            sb.append("parameters={");
+            if (parameters != null) {
+                for (RangerConstraintParamDef parameter : parameters) {
+                    if (parameter != null) {
+                        parameter.toString(sb);
+                    }
+                }
+            }
+            sb.append("} ");
+
+            sb.append("options={").append(options).append("} ");
+            sb.append("}");
+
+            return sb;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(itemId, name, label, description, rbKeyLabel, rbKeyDescription, resources, accessTypes, parameters, options);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            } else if (obj == null) {
+                return false;
+            } else if (getClass() != obj.getClass()) {
+                return false;
+            }
+
+            RangerConstraintDef other = (RangerConstraintDef) obj;
+
+            return Objects.equals(itemId, other.itemId) &&
+                    Objects.equals(name, other.name) &&
+                    Objects.equals(label, other.label) &&
+                    Objects.equals(description, other.description) &&
+                    Objects.equals(rbKeyLabel, other.rbKeyLabel) &&
+                    Objects.equals(rbKeyDescription, other.rbKeyDescription) &&
+                    Objects.equals(resources, other.resources) &&
+                    Objects.equals(accessTypes, other.accessTypes) &&
+                    Objects.equals(parameters, other.parameters) &&
+                    Objects.equals(options, other.options);
+        }
+
+        @Override
+        public String toString() {
+            StringBuilder sb = new StringBuilder();
+
+            toString(sb);
+
+            return sb.toString();
+        }
+    }
+
+    @JsonAutoDetect(fieldVisibility = Visibility.ANY)
+    @JsonInclude(JsonInclude.Include.NON_EMPTY)
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    public static class RangerConstraintParamDef implements java.io.Serializable {
+        private static final long serialVersionUID = 1L;
+
+        private Long    itemId;
+        private String  name;
+        private String  label;
+        private String  description;
+        private String  type;
+        private String  subType;
+        private Boolean mandatory;
+        private String  defaultValue;
+        private String  rbKeyLabel;
+        private String  rbKeyDescription;
+
+        public RangerConstraintParamDef() {
+            setMandatory(null);
+        }
+
+        public RangerConstraintParamDef(RangerConstraintParamDef other) {
+            setItemId(other.getItemId());
+            setName(other.getName());
+            setLabel(other.getLabel());
+            setDescription(other.getDescription());
+            setType(other.getType());
+            setSubType(other.getSubType());
+            setMandatory(other.getMandatory());
+            setDefaultValue(other.getDefaultValue());
+            setRbKeyLabel(other.getRbKeyLabel());
+            setRbKeyDescription(other.getRbKeyDescription());
+        }
+
+        public Long getItemId() {
+            return itemId;
+        }
+
+        public void setItemId(Long itemId) {
+            this.itemId = itemId;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getLabel() {
+            return label;
+        }
+
+        public void setLabel(String label) {
+            this.label = label;
+        }
+
+        public String getDescription() {
+            return description;
+        }
+
+        public void setDescription(String description) {
+            this.description = description;
+        }
+
+        public String getType() {
+            return type;
+        }
+
+        public void setType(String type) {
+            this.type = type;
+        }
+
+        public String getSubType() {
+            return subType;
+        }
+
+        public void setSubType(String subType) {
+            this.subType = subType;
+        }
+
+        public Boolean getMandatory() {
+            return mandatory;
+        }
+
+        public void setMandatory(Boolean mandatory) {
+            this.mandatory = mandatory == null ? Boolean.FALSE : mandatory;
+        }
+
+        public String getDefaultValue() {
+            return defaultValue;
+        }
+
+        public void setDefaultValue(String defaultValue) {
+            this.defaultValue = defaultValue;
+        }
+
+        public String getRbKeyLabel() {
+            return rbKeyLabel;
+        }
+
+        public void setRbKeyLabel(String rbKeyLabel) {
+            this.rbKeyLabel = rbKeyLabel;
+        }
+
+        public String getRbKeyDescription() {
+            return rbKeyDescription;
+        }
+
+        public void setRbKeyDescription(String rbKeyDescription) {
+            this.rbKeyDescription = rbKeyDescription;
+        }
+
+        public void dedupStrings(Map<String, String> strTbl) {
+            name             = StringUtil.dedupString(name, strTbl);
+            label            = StringUtil.dedupString(label, strTbl);
+            description      = StringUtil.dedupString(description, strTbl);
+            type             = StringUtil.dedupString(type, strTbl);
+            subType          = StringUtil.dedupString(subType, strTbl);
+            defaultValue     = StringUtil.dedupString(defaultValue, strTbl);
+            rbKeyLabel       = StringUtil.dedupString(rbKeyLabel, strTbl);
+            rbKeyDescription = StringUtil.dedupString(rbKeyDescription, strTbl);
+        }
+
+        public StringBuilder toString(StringBuilder sb) {
+            sb.append("RangerConstraintParamDef={");
+            sb.append("itemId={").append(itemId).append("} ");
+            sb.append("name={").append(name).append("} ");
+            sb.append("label={").append(label).append("} ");
+            sb.append("description={").append(description).append("} ");
+            sb.append("type={").append(type).append("} ");
+            sb.append("subType={").append(subType).append("} ");
+            sb.append("mandatory={").append(mandatory).append("} ");
+            sb.append("defaultValue={").append(defaultValue).append("} ");
+            sb.append("rbKeyLabel={").append(rbKeyLabel).append("} ");
+            sb.append("rbKeyDescription={").append(rbKeyDescription).append("} ");
+            sb.append("}");
+
+            return sb;
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(itemId, name, label, description, type, subType, mandatory, defaultValue, rbKeyLabel, rbKeyDescription);
+        }
+
+        @Override
+        public boolean equals(Object obj) {
+            if (this == obj) {
+                return true;
+            } else if (obj == null) {
+                return false;
+            } else if (getClass() != obj.getClass()) {
+                return false;
+            }
+
+            RangerConstraintParamDef other = (RangerConstraintParamDef) obj;
+
+            return Objects.equals(itemId, other.itemId) &&
+                    Objects.equals(name, other.name) &&
+                    Objects.equals(label, other.label) &&
+                    Objects.equals(description, other.description) &&
+                    Objects.equals(type, other.type) &&
+                    Objects.equals(subType, other.subType) &&
+                    Objects.equals(mandatory, other.mandatory) &&
+                    Objects.equals(defaultValue, other.defaultValue) &&
+                    Objects.equals(rbKeyLabel, other.rbKeyLabel) &&
+                    Objects.equals(rbKeyDescription, other.rbKeyDescription);
         }
 
         @Override

@@ -33,7 +33,15 @@ import CreatableSelect from "react-select/creatable";
 import Select from "react-select";
 import { InfoIcon } from "Utils/XAUtils";
 import { RegexMessage } from "Utils/XAMessages";
-import { selectInputCustomStyles } from "Components/CommonComponents";
+import { selectInputWrappingCustomStyles } from "Components/CommonComponents";
+import {
+  sortPolicyConditions,
+  buildActionReqsMapFromConditionDef,
+  isPerRowCondition,
+  getAllowedActionMatchesForCondition,
+  getCleanConditions,
+  parseConditionUiHint
+} from "Utils/policyConditionUtils";
 
 const esprima = require("esprima");
 const TYPE_SELECT = "select";
@@ -41,6 +49,27 @@ const TYPE_CHECKBOX = "checkbox";
 const TYPE_INPUT = "input";
 const TYPE_RADIO = "radio";
 const TYPE_CUSTOM = "custom";
+
+/**
+ * Default react-select props for condition fields rendered inside the Bootstrap
+ * OverlayTrigger popover (e.g. Action / action-matches on a permission row).
+ * Portaling the menu to document.body with fixed positioning prevents a long
+ * option list from resizing the popover or scrolling the policy form when the
+ * menu opens. menuShouldScrollIntoView is disabled for the same reason.
+ * Callers may pass selectProps to merge or override (PolicyPermissionItem does).
+ */
+const CONDITION_POPOVER_SELECT_PROPS = {
+  menuPortalTarget: typeof document !== "undefined" ? document.body : undefined,
+  menuPosition: "fixed",
+  menuPlacement: "auto",
+  menuShouldScrollIntoView: false
+};
+
+/** Above .table-editable popover overlay (z-index 1060 in style.css). */
+const conditionPopoverSelectStyles = {
+  ...selectInputWrappingCustomStyles,
+  menuPortal: (base) => ({ ...base, zIndex: 1061 })
+};
 
 const CheckboxComp = (props) => {
   const { options, value = [], valRef, showSelectAll, selectAllLabel } = props;
@@ -148,9 +177,20 @@ const InputBoxComp = (props) => {
   );
 };
 
-const CustomCondition = (props) => {
-  const { value, valRef, conditionDefVal, selectProps, validExpression } =
-    props;
+/**
+ * One policy condition field inside the per-row popover (ip-range, _expression, or action-matches).
+ * uiHint shape selects control: singleValue | isMultiline | isMultiValue (fixed or creatable select).
+ */
+const ConditionRow = ({
+  m,
+  value,
+  valRef,
+  selectProps,
+  validExpression,
+  servicedefName,
+  actionFilterContext,
+  actionReqsMap
+}) => {
   const tagAccessData = (val, key) => {
     if (!isObject(valRef.current)) {
       valRef.current = {};
@@ -158,158 +198,231 @@ const CustomCondition = (props) => {
     valRef.current[key] = val;
   };
 
+  const uiHintAttb = parseConditionUiHint(m.uiHint);
+  const conditionValue = value?.[m.name];
+
+  const [selectedCondVal, setCondSelect] = useState(conditionValue);
+  const [selectedJSCondVal, setJSCondVal] = useState(
+    typeof conditionValue === "string" ? conditionValue : ""
+  );
+  const [selectedInputVal, setSelectVal] = useState(
+    Array.isArray(conditionValue) ? conditionValue : []
+  );
+
+  useEffect(() => {
+    setCondSelect(conditionValue);
+    setJSCondVal(typeof conditionValue === "string" ? conditionValue : "");
+    setSelectVal(Array.isArray(conditionValue) ? conditionValue : []);
+  }, [conditionValue]);
+
+  if (!uiHintAttb) return null;
+
+  if (uiHintAttb?.singleValue) {
+    const accessedOpt = [
+      { value: "yes", label: "Yes" },
+      { value: "no", label: "No" }
+    ];
+    const accessedVal = (val) => {
+      let value = null;
+      if (val) {
+        let opObj = accessedOpt?.filter((mOp) => {
+          if (mOp.value == (val[0]?.value || val)) {
+            return mOp;
+          }
+        });
+        if (opObj) {
+          value = opObj;
+        }
+      }
+      return value;
+    };
+    const selectHandleChange = (e, name) => {
+      let filterVal = accessedOpt?.filter((mOp) => {
+        if (mOp.value != e[0]?.value) {
+          return mOp;
+        }
+      });
+      setCondSelect(!isEmpty(e) ? (e?.length > 1 ? filterVal : e) : null);
+      tagAccessData(
+        !isEmpty(e) ? (e?.length > 1 ? filterVal[0].value : e[0].value) : null,
+        name
+      );
+    };
+    return (
+      <div key={m.name}>
+        <Form.Group className="mb-3">
+          <b>{m.label}:</b>
+          <Select
+            options={accessedOpt}
+            onChange={(e) => selectHandleChange(e, m.name)}
+            value={
+              selectedCondVal?.value
+                ? accessedVal(selectedCondVal.value)
+                : accessedVal(selectedCondVal)
+            }
+            isMulti={true}
+            isClearable={false}
+          />
+        </Form.Group>
+      </div>
+    );
+  }
+
+  if (uiHintAttb?.isMultiline) {
+    const expressionVal = (val) => {
+      let value = null;
+      if (val != "" && typeof val != "object") {
+        valRef.current[m.name] = val.trim();
+        return (value = val);
+      }
+      return value !== null ? value : "";
+    };
+    const textAreaHandleChange = (e, name) => {
+      setJSCondVal(e.target.value);
+      tagAccessData(e.target.value, name);
+    };
+    return (
+      <div key={m.name}>
+        <Form.Group className="mb-3">
+          <Row>
+            <Col>
+              <b>{m.label}:</b>
+              <InfoIcon
+                position="right"
+                message={
+                  <p className="pd-10">
+                    {RegexMessage.MESSAGE.policyConditionInfoIcon}
+                  </p>
+                }
+              />
+            </Col>
+          </Row>
+          <Row>
+            <Col>
+              <Form.Control
+                as="textarea"
+                rows={3}
+                key={m.name}
+                value={expressionVal(selectedJSCondVal)}
+                onChange={(e) => textAreaHandleChange(e, m.name)}
+                onBlur={(e) => {
+                  textAreaHandleChange(
+                    { target: { value: e.target.value.trim() } },
+                    m.name
+                  );
+                }}
+                isInvalid={validExpression.state}
+              />
+              {validExpression.state && (
+                <div className="text-danger">{validExpression.errorMSG}</div>
+              )}
+            </Col>
+          </Row>
+        </Form.Group>
+      </div>
+    );
+  }
+
+  if (uiHintAttb?.isMultiValue) {
+    const { dropdownOptions, prunedSelection: displayedValue } =
+      getAllowedActionMatchesForCondition({
+        conditionName: m.name,
+        actionFilterContext,
+        actionReqsMap,
+        servicedefName,
+        uiHintAttb,
+        currentSelection: selectedInputVal
+      });
+
+    const handleChange = (e, name) => {
+      setSelectVal(e);
+      tagAccessData(e, name);
+    };
+    return (
+      <div key={m.name}>
+        <Form.Group className="mb-3" controlId={m.name} key={m.name}>
+          <b>{m.label}:</b>
+          {dropdownOptions ? (
+            <Select
+              {...CONDITION_POPOVER_SELECT_PROPS}
+              {...selectProps}
+              value={displayedValue || null}
+              onChange={(e) => handleChange(e, m.name)}
+              options={dropdownOptions}
+              placeholder=""
+              isClearable={false}
+              styles={conditionPopoverSelectStyles}
+            />
+          ) : (
+            <CreatableSelect
+              {...CONDITION_POPOVER_SELECT_PROPS}
+              {...selectProps}
+              value={displayedValue || null}
+              onChange={(e) => handleChange(e, m.name)}
+              placeholder=""
+              width="500px"
+              isClearable={false}
+              styles={conditionPopoverSelectStyles}
+              formatCreateLabel={(inputValue) =>
+                `Create "${inputValue.trim()}"`
+              }
+              onCreateOption={(inputValue) => {
+                const trimmedValue = inputValue.trim();
+                if (trimmedValue) {
+                  const newOption = {
+                    label: trimmedValue,
+                    value: trimmedValue
+                  };
+                  const currentValues = selectedInputVal || [];
+                  const newValues = Array.isArray(currentValues)
+                    ? [...currentValues, newOption]
+                    : [newOption];
+                  setSelectVal(newValues);
+                  tagAccessData(newValues, m.name);
+                }
+              }}
+            />
+          )}
+        </Form.Group>
+      </div>
+    );
+  }
+
+  return null;
+};
+
+/**
+ * Per permission-row conditions popover (TYPE_CUSTOM in PolicyPermissionItem).
+ * Renders all service-def conditions; action-matches is filtered on save at policy level only.
+ */
+const CustomCondition = (props) => {
+  const {
+    value,
+    valRef,
+    conditionDefVal,
+    selectProps,
+    validExpression,
+    servicedefName,
+    actionFilterContext,
+    actionReqsMap = {}
+  } = props;
+
   return (
     <>
       {conditionDefVal?.length > 0 &&
-        conditionDefVal.map((m) => {
-          let uiHintAttb =
-            m.uiHint != undefined && m.uiHint != "" ? JSON.parse(m.uiHint) : "";
-          if (uiHintAttb != "") {
-            if (uiHintAttb?.singleValue) {
-              const [selectedCondVal, setCondSelect] = useState(
-                value?.[m.name] || value
-              );
-              const accessedOpt = [
-                { value: "yes", label: "Yes" },
-                { value: "no", label: "No" }
-              ];
-              const accessedVal = (val) => {
-                let value = null;
-                if (val) {
-                  let opObj = accessedOpt?.filter((m) => {
-                    if (m.value == (val[0]?.value || val)) {
-                      return m;
-                    }
-                  });
-                  if (opObj) {
-                    value = opObj;
-                  }
-                }
-                return value;
-              };
-              const selectHandleChange = (e, name) => {
-                let filterVal = accessedOpt?.filter((m) => {
-                  if (m.value != e[0]?.value) {
-                    return m;
-                  }
-                });
-                setCondSelect(
-                  !isEmpty(e) ? (e?.length > 1 ? filterVal : e) : null
-                );
-                tagAccessData(
-                  !isEmpty(e)
-                    ? e?.length > 1
-                      ? filterVal[0].value
-                      : e[0].value
-                    : null,
-                  name
-                );
-              };
-              return (
-                <div key={m.name}>
-                  <Form.Group className="mb-3">
-                    <b>{m.label}:</b>
-                    <Select
-                      options={accessedOpt}
-                      onChange={(e) => selectHandleChange(e, m.name)}
-                      value={
-                        selectedCondVal?.value
-                          ? accessedVal(selectedCondVal.value)
-                          : accessedVal(selectedCondVal)
-                      }
-                      isMulti={true}
-                      isClearable={false}
-                    />
-                  </Form.Group>
-                </div>
-              );
-            }
-            if (uiHintAttb?.isMultiline) {
-              const [selectedJSCondVal, setJSCondVal] = useState(
-                value?.[m.name] || value
-              );
-              const expressionVal = (val) => {
-                let value = null;
-                if (val != "" && typeof val != "object") {
-                  valRef.current[m.name] = val;
-                  return (value = val);
-                }
-                return value !== null ? value : "";
-              };
-              const textAreaHandleChange = (e, name) => {
-                setJSCondVal(e.target.value);
-                tagAccessData(e.target.value, name);
-              };
-              return (
-                <div key={m.name}>
-                  <Form.Group className="mb-3">
-                    <Row>
-                      <Col>
-                        <b>{m.label}:</b>
-                        <InfoIcon
-                          position="right"
-                          message={
-                            <p className="pd-10">
-                              {RegexMessage.MESSAGE.policyConditionInfoIcon}
-                            </p>
-                          }
-                        />
-                      </Col>
-                    </Row>
-                    <Row>
-                      <Col>
-                        <Form.Control
-                          as="textarea"
-                          rows={3}
-                          key={m.name}
-                          value={expressionVal(selectedJSCondVal)}
-                          onChange={(e) => textAreaHandleChange(e, m.name)}
-                          isInvalid={validExpression.state}
-                        />
-                        {validExpression.state && (
-                          <div className="text-danger">
-                            {validExpression.errorMSG}
-                          </div>
-                        )}
-                      </Col>
-                    </Row>
-                  </Form.Group>
-                </div>
-              );
-            }
-            if (uiHintAttb?.isMultiValue) {
-              const [selectedInputVal, setSelectVal] = useState(
-                value?.[m.name] || []
-              );
-              const handleChange = (e, name) => {
-                setSelectVal(e);
-                tagAccessData(e, name);
-              };
-              return (
-                <div key={m.name}>
-                  <Form.Group
-                    className="mb-3"
-                    controlId="Ip-range"
-                    key={m.name}
-                  >
-                    <b>{m.label}:</b>
-                    <CreatableSelect
-                      {...selectProps}
-                      defaultValue={
-                        selectedInputVal == "" ? null : selectedInputVal
-                      }
-                      onChange={(e) => handleChange(e, m.name)}
-                      placeholder=""
-                      width="500px"
-                      isClearable={false}
-                      styles={selectInputCustomStyles}
-                    />
-                  </Form.Group>
-                </div>
-              );
-            }
-          }
-        })}
+        sortPolicyConditions(conditionDefVal).map((m) => (
+          <ConditionRow
+            key={m.name}
+            m={m}
+            value={value}
+            valRef={valRef}
+            selectProps={selectProps}
+            validExpression={validExpression}
+            servicedefName={servicedefName}
+            actionFilterContext={actionFilterContext}
+            actionReqsMap={actionReqsMap}
+          />
+        ))}
     </>
   );
 };
@@ -362,7 +475,9 @@ const Editable = (props) => {
     options = [],
     conditionDefVal,
     servicedefName,
-    isGDS
+    isGDS,
+    popOverheader,
+    actionFilterContext
   } = props;
 
   const initialLoad = useRef(true);
@@ -375,6 +490,11 @@ const Editable = (props) => {
   const [state, dispatch] = useReducer(reducer, props, initialState);
   const { show, value, target } = state;
   let isListenerAttached = false;
+
+  const actionReqsMap = React.useMemo(
+    () => buildActionReqsMapFromConditionDef(conditionDefVal),
+    [conditionDefVal]
+  );
 
   const handleClickOutside = (e) => {
     if (
@@ -400,9 +520,26 @@ const Editable = (props) => {
     };
   }, []);
 
+  useEffect(() => {
+    if (!initialLoad.current) {
+      onChange(editableValue);
+      dispatch({
+        type: "SET_VALUE",
+        value: editableValue,
+        show: false,
+        target: null
+      });
+    } else {
+      initialLoad.current = false;
+    }
+    type === TYPE_CUSTOM
+      ? (selectValRef.current = { ...editableValue })
+      : (selectValRef.current = editableValue);
+  }, [editableValue]);
+
   const displayValue = () => {
     let val = "--";
-    const selectVal = value;
+    let selectVal = value;
     const policyConditionDisplayValue = () => {
       let ipRangVal, uiHintVal;
       if (selectVal) {
@@ -412,9 +549,10 @@ const Editable = (props) => {
               return m;
             }
           });
-          if (conditionObj?.uiHint && conditionObj?.uiHint != "") {
-            uiHintVal = JSON.parse(conditionObj.uiHint);
+          if (!conditionObj) {
+            return null;
           }
+          uiHintVal = parseConditionUiHint(conditionObj.uiHint);
           if (isArray(selectVal[property])) {
             ipRangVal = selectVal[property]
               ?.map(function (m) {
@@ -426,7 +564,9 @@ const Editable = (props) => {
             <div
               key={property}
               className={`${
-                uiHintVal?.isMultiline ? "editable-label" : "badge bg-dark"
+                uiHintVal?.isMultiline
+                  ? "editable-label rule-condition-wrapper"
+                  : "badge bg-dark"
               }`}
             >
               {`${conditionObj.label}: ${
@@ -477,7 +617,6 @@ const Editable = (props) => {
                 variant="outline-dark"
                 size="sm"
                 type="button"
-                s
               >
                 <i className="fa-fw fa fa-plus"></i>
               </Button>
@@ -489,7 +628,7 @@ const Editable = (props) => {
           selectVal && selectVal?.length > 0 ? (
             <>
               <span className="editable-edit-text">
-                {selectVal.map((op, index) => (
+                {sortBy(selectVal, "label").map((op, index) => (
                   <h6 className="d-inline me-1" key={index}>
                     <Badge bg="info">{op.label}</Badge>
                   </h6>
@@ -587,11 +726,7 @@ const Editable = (props) => {
             </div>
           );
       } else if (type === TYPE_CUSTOM) {
-        for (const key in selectVal) {
-          if (selectVal[key] == null || selectVal[key] == "") {
-            delete selectVal[key];
-          }
-        }
+        selectVal = getCleanConditions(selectVal);
         if (Object.keys(selectVal).length != 0) {
           val = (
             <h6>
@@ -632,34 +767,44 @@ const Editable = (props) => {
     return val;
   };
 
-  useEffect(() => {
-    if (!initialLoad.current) {
-      onChange(editableValue);
-      dispatch({
-        type: "SET_VALUE",
-        value: editableValue,
-        show: false,
-        target: null
-      });
-    } else {
-      initialLoad.current = false;
-    }
-    type === TYPE_CUSTOM
-      ? (selectValRef.current = { ...editableValue })
-      : (selectValRef.current = editableValue);
-  }, [editableValue]);
-
   const handleApply = () => {
     let errors, uiHintVal;
     if (selectValRef?.current) {
-      sortBy(Object.keys(selectValRef.current)).map((property) => {
+      // Re-validate action-matches against current row permissions before persisting.
+      sortBy(Object.keys(selectValRef.current)).forEach((property) => {
         let conditionObj = find(conditionDefVal, function (m) {
           if (m.name == property) {
             return m;
           }
         });
-        if (conditionObj != undefined && conditionObj?.uiHint != "") {
-          uiHintVal = JSON.parse(conditionObj.uiHint);
+        uiHintVal = parseConditionUiHint(conditionObj?.uiHint);
+        if (conditionObj != undefined && uiHintVal) {
+          if (
+            isPerRowCondition(conditionObj.name) &&
+            uiHintVal?.isMultiValue &&
+            Array.isArray(uiHintVal?.options) &&
+            actionFilterContext?.selectedAccessTypes?.length > 0
+          ) {
+            const current = selectValRef.current[conditionObj.name];
+
+            if (Array.isArray(current)) {
+              const { prunedSelection } = getAllowedActionMatchesForCondition({
+                conditionName: conditionObj.name,
+                actionFilterContext,
+                actionReqsMap,
+                servicedefName,
+                uiHintAttb: uiHintVal,
+                currentSelection: current
+              });
+
+              if (prunedSelection && prunedSelection.length > 0) {
+                selectValRef.current[conditionObj.name] = prunedSelection;
+              } else {
+                delete selectValRef.current[conditionObj.name];
+              }
+            }
+          }
+
           if (
             uiHintVal?.isMultiline &&
             selectValRef.current[conditionObj.name] != "" &&
@@ -688,6 +833,16 @@ const Editable = (props) => {
     }
   };
 
+  const handleClick = (e) => {
+    setValidated({ state: false, errorMSG: "" });
+    let display = !show;
+    dispatch({
+      type: "SET_POPOVER",
+      show: display,
+      target: e.target
+    });
+  };
+
   const handleClose = () => {
     setValidated({ state: false, errorMSG: "" });
     dispatch({
@@ -704,9 +859,7 @@ const Editable = (props) => {
         type === TYPE_CHECKBOX && "popover-maxHeight popover-minHeight"
       }`}
     >
-      <Popover.Header>
-        {type === TYPE_CHECKBOX ? "Select" : "Enter"}
-      </Popover.Header>
+      <Popover.Header>{popOverheader}</Popover.Header>
       <Popover.Body>
         {type === TYPE_CHECKBOX ? (
           <CheckboxComp
@@ -727,6 +880,9 @@ const Editable = (props) => {
             conditionDefVal={props.conditionDefVal}
             selectProps={props.selectProps}
             validExpression={validExpression}
+            servicedefName={servicedefName}
+            actionFilterContext={actionFilterContext}
+            actionReqsMap={actionReqsMap}
           />
         ) : null}
       </Popover.Body>
@@ -750,16 +906,6 @@ const Editable = (props) => {
       </div>
     </Popover>
   );
-
-  const handleClick = (e) => {
-    setValidated({ state: false, errorMSG: "" });
-    let display = !show;
-    dispatch({
-      type: "SET_POPOVER",
-      show: display,
-      target: e.target
-    });
-  };
 
   return (
     <div ref={popoverRef}>

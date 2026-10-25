@@ -19,36 +19,40 @@
 
 package org.apache.ranger.authorization.nestedstructure.authorizer;
 
-import org.testng.annotations.AfterTest;
-import org.testng.annotations.Test;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 
-import static org.testng.Assert.assertFalse;
-import static org.testng.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TestRecordFilterJavaScript {
-    @Test(expectedExceptions = MaskingException.class)
+    @Test
     public void testArbitraryCommand() {
-        RecordFilterJavaScript.filterRow("user", "this.engine.factory.scriptEngine.eval('java.lang.Runtime.getRuntime().exec(\"/Applications/Spotify.app/Contents/MacOS/Spotify\")')", TestJsonManipulator.bigTester);
+        assertThrows(MaskingException.class, () ->
+                RecordFilterJavaScript.filterRow("user", "this.engine.factory.scriptEngine.eval('java.lang.Runtime.getRuntime().exec(\"/Applications/Spotify.app/Contents/MacOS/Spotify\")')", TestJsonManipulator.bigTester));
     }
 
     @Test
-    public void testAccessJava() {
-        try {
-            RecordFilterJavaScript.filterRow("user", "bufferedWriter = new java.io.BufferedWriter(new java.io.FileWriter('omg.txt'));\n" +
-                    "            bufferedWriter.write(\"Writing line one to file\"); bufferedWriter.close;", TestJsonManipulator.bigTester);
-        } catch (MaskingException e) {
-            assertTrue(e.getCause() instanceof RuntimeException);
-            assertTrue(e.getCause().getCause() instanceof ClassNotFoundException);
-        }
+    public void testJavaInteropCannotWriteFile() throws Exception {
+        Files.deleteIfExists(Paths.get("omg.txt"));
+
+        assertThrows(MaskingException.class, () -> RecordFilterJavaScript.filterRow("user", "bufferedWriter = new java.io.BufferedWriter(new java.io.FileWriter('omg.txt'));\n" +
+                "            bufferedWriter.write(\"Writing line one to file\"); bufferedWriter.close;", TestJsonManipulator.bigTester));
         assertFalse(Files.exists(Paths.get("omg.txt")));
     }
 
-    @AfterTest
-    public void deleteTestFile() throws IOException {
+    @Test
+    public void testEngineAndContextAreCleared() {
+        assertTrue(RecordFilterJavaScript.filterRow("user", "engine === null && context === null", TestJsonManipulator.bigTester));
+    }
+
+    @AfterEach
+    public void cleanupTest() throws IOException {
         Files.deleteIfExists(Paths.get("omg.txt"));
     }
 

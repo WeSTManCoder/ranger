@@ -19,7 +19,6 @@
 
 package org.apache.ranger.unixusersync.process;
 
-import com.sun.jersey.api.client.ClientResponse;
 import org.apache.ranger.authorization.utils.JsonUtils;
 import org.apache.ranger.ugsyncutil.model.FileSyncSourceInfo;
 import org.apache.ranger.ugsyncutil.model.LdapSyncSourceInfo;
@@ -29,6 +28,7 @@ import org.apache.ranger.ugsyncutil.model.XGroupInfo;
 import org.apache.ranger.ugsyncutil.model.XUserInfo;
 import org.apache.ranger.ugsyncutil.util.UgsyncCommonConstants;
 import org.apache.ranger.unixusersync.config.UserGroupSyncConfig;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.MethodOrderer;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
@@ -37,6 +37,7 @@ import org.junit.jupiter.api.extension.Extension;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import javax.ws.rs.core.Cookie;
+import javax.ws.rs.core.Response;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -64,6 +65,24 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @ExtendWith(MockitoExtension.class)
 @TestMethodOrder(MethodOrderer.MethodName.class)
 public class TestPolicyMgrUserGroupBuilder {
+    @BeforeAll
+    public static void setupHA() throws Exception {
+        // Reset HA singletons to pick up non-HA config
+        Class<?> serviceStateClz = Class.forName("org.apache.ranger.ha.ServiceState");
+        Field serviceStateInstance = serviceStateClz.getDeclaredField("instance");
+        serviceStateInstance.setAccessible(true);
+        serviceStateInstance.set(null, null);
+
+        Class<?> haInitClz = Class.forName("org.apache.ranger.unixusersync.ha.UserSyncHAInitializerImpl");
+        Field haInstance = haInitClz.getDeclaredField("theInstance");
+        haInstance.setAccessible(true);
+        haInstance.set(null, null);
+
+        // Disable HA for unit tests to avoid "server not in active state" errors
+        UserGroupSyncConfig cfg = UserGroupSyncConfig.getInstance();
+        cfg.setProperty("ranger-ugsync.server.ha.enabled", "false");
+    }
+
     @Test
     public void testA_userNameTransform_appliesLowerCaseAndRegex() throws Exception {
         UserGroupSyncConfig cfg = UserGroupSyncConfig.getInstance();
@@ -262,6 +281,25 @@ public class TestPolicyMgrUserGroupBuilder {
         PolicyMgrUserGroupBuilder builder = new PolicyMgrUserGroupBuilder();
 
         try {
+            // Initialize ALL required fields to prevent NullPointer exceptions
+            setPrivate(builder, "userCache", new HashMap<String, Object>());
+            setPrivate(builder, "groupCache", new HashMap<String, Object>());
+            setPrivate(builder, "groupUsersCache", new HashMap<String, Set<String>>());
+            setPrivate(builder, "groupNameMap", new HashMap<String, String>());
+            setPrivate(builder, "userNameMap", new HashMap<String, String>());
+            setPrivate(builder, "deltaGroups", new HashMap<String, Object>());
+            setPrivate(builder, "deltaUsers", new HashMap<String, Object>());
+            setPrivate(builder, "deltaGroupUsers", new HashMap<String, Set<String>>());
+            setPrivate(builder, "deletedGroups", new HashMap<String, Object>());
+            setPrivate(builder, "deletedUsers", new HashMap<String, Object>());
+
+            // Initialize counter fields
+            setPrivate(builder, "noOfNewUsers", 0);
+            setPrivate(builder, "noOfNewGroups", 0);
+            setPrivate(builder, "noOfModifiedUsers", 0);
+            setPrivate(builder, "noOfModifiedGroups", 0);
+            setPrivate(builder, "noOfDeletedUsers", 0);
+            setPrivate(builder, "noOfDeletedGroups", 0);
             Field userCache = PolicyMgrUserGroupBuilder.class.getDeclaredField("userCache");
             userCache.setAccessible(true);
             Map<String, XUserInfo> uc = new HashMap<>();
@@ -462,7 +500,7 @@ public class TestPolicyMgrUserGroupBuilder {
         attrs.put(UgsyncCommonConstants.LDAP_URL, "ldap://example");
         g.setOtherAttrsMap(attrs);
         g.setOtherAttributes(JsonUtils.objectToJson(attrs));
-        g.setIsVisible("0");
+        g.setIsVisible("1");
         gcache.put("Gdel", g);
         setPrivate(builder, "groupCache", gcache);
 
@@ -632,7 +670,7 @@ public class TestPolicyMgrUserGroupBuilder {
         attrsG.put(UgsyncCommonConstants.LDAP_URL, "ldap://example");
         g.setOtherAttrsMap(attrsG);
         g.setOtherAttributes(JsonUtils.objectToJson(attrsG));
-        g.setIsVisible("0");
+        g.setIsVisible("1");
         gcache.put("Gdel2", g);
         setPrivate(builder, "groupCache", gcache);
 
@@ -710,6 +748,23 @@ public class TestPolicyMgrUserGroupBuilder {
         PolicyMgrUserGroupBuilder builder = new PolicyMgrUserGroupBuilder();
 
         try {
+            // Initialize additional fields that might be accessed
+            setPrivate(builder, "noOfNewUsers", 0);
+            setPrivate(builder, "noOfNewGroups", 0);
+            setPrivate(builder, "noOfModifiedUsers", 0);
+            setPrivate(builder, "noOfModifiedGroups", 0);
+            setPrivate(builder, "noOfDeletedUsers", 0);
+            setPrivate(builder, "noOfDeletedGroups", 0);
+
+            // Initialize ALL Map fields to prevent NullPointer exceptions
+            setPrivate(builder, "groupUsersCache", new HashMap<String, Set<String>>());
+            setPrivate(builder, "groupNameMap", new HashMap<String, String>());
+            setPrivate(builder, "userNameMap", new HashMap<String, String>());
+            setPrivate(builder, "deltaGroups", new HashMap<String, Object>());
+            setPrivate(builder, "deltaUsers", new HashMap<String, Object>());
+            setPrivate(builder, "deltaGroupUsers", new HashMap<String, Set<String>>());
+            setPrivate(builder, "deletedGroups", new HashMap<String, Object>());
+            setPrivate(builder, "deletedUsers", new HashMap<String, Object>());
             Map<String, XUserInfo> uc = new HashMap<>();
             uc.put("u1", new XUserInfo());
             uc.put("u2", new XUserInfo());
@@ -829,25 +884,25 @@ public class TestPolicyMgrUserGroupBuilder {
             boolean getWithCookie;
 
             @Override
-            public ClientResponse get(String relativeUrl, Map<String, String> params) {
+            public Response get(String relativeUrl, Map<String, String> params) {
                 getWithCred = true;
                 return null;
             }
 
             @Override
-            public ClientResponse get(String relativeUrl, Map<String, String> params, Cookie sessionId) {
+            public Response get(String relativeUrl, Map<String, String> params, Cookie sessionId) {
                 getWithCookie = true;
                 return null;
             }
 
             @Override
-            public ClientResponse post(String relativeUrl, Map<String, String> params, Object obj) {
+            public Response post(String relativeUrl, Map<String, String> params, Object obj) {
                 postWithCred = true;
                 return null;
             }
 
             @Override
-            public ClientResponse post(String relativeUrl, Map<String, String> params, Object obj, Cookie sessionId) {
+            public Response post(String relativeUrl, Map<String, String> params, Object obj, Cookie sessionId) {
                 postWithCookie = true;
                 return null;
             }
@@ -1054,23 +1109,295 @@ public class TestPolicyMgrUserGroupBuilder {
         }
 
         @Override
-        public ClientResponse get(String relativeUrl, Map<String, String> params) {
+        public Response get(String relativeUrl, Map<String, String> params) {
             return null;
         }
 
         @Override
-        public ClientResponse get(String relativeUrl, Map<String, String> params, Cookie sessionId) {
+        public Response get(String relativeUrl, Map<String, String> params, Cookie sessionId) {
             return null;
         }
 
         @Override
-        public ClientResponse post(String relativeUrl, Map<String, String> params, Object obj) {
+        public Response post(String relativeUrl, Map<String, String> params, Object obj) {
             return null;
         }
 
         @Override
-        public ClientResponse post(String relativeUrl, Map<String, String> params, Object obj, Cookie sessionId) {
+        public Response post(String relativeUrl, Map<String, String> params, Object obj, Cookie sessionId) {
             return null;
         }
+    }
+
+    @Test
+    public void testAK_computeUserDelta_dnValidationEnabled_ouMoveUpdates() throws Exception {
+        PolicyMgrUserGroupBuilder builder = new PolicyMgrUserGroupBuilder();
+
+        String oldDn = "cn=john,ou=People,dc=example,dc=com";
+        String newDn = "cn=john,ou=Moved,dc=example,dc=com";
+
+        Map<String, XUserInfo> userCache = new HashMap<>();
+        XUserInfo              existing  = new XUserInfo();
+        existing.setName("john");
+        existing.setSyncSource("LDAP/AD");
+        Map<String, String> oldAttrs = new HashMap<>();
+        oldAttrs.put(UgsyncCommonConstants.ORIGINAL_NAME, "john");
+        oldAttrs.put(UgsyncCommonConstants.FULL_NAME, oldDn);
+        oldAttrs.put(UgsyncCommonConstants.SYNC_SOURCE, "LDAP/AD");
+        existing.setOtherAttrsMap(oldAttrs);
+        existing.setOtherAttributes(JsonUtils.objectToJson(oldAttrs));
+        userCache.put("john", existing);
+
+        setPrivate(builder, "userCache", userCache);
+        setPrivate(builder, "userNameMap", new HashMap<String, String>());
+        setPrivate(builder, "policyMgrUserName", "rangerusersync");
+        setPrivate(builder, "isStartupFlag", false);
+        setPrivate(builder, "isDnValidationEnabled", true);
+        setPrivate(builder, "isSyncSourceValidationEnabled", true);
+
+        Map<String, String> newAttrs = new HashMap<>();
+        newAttrs.put(UgsyncCommonConstants.ORIGINAL_NAME, "john");
+        newAttrs.put(UgsyncCommonConstants.FULL_NAME, newDn);
+        newAttrs.put(UgsyncCommonConstants.SYNC_SOURCE, "LDAP/AD");
+
+        Map<String, Map<String, String>> source = new HashMap<>();
+        source.put(newDn, newAttrs);
+
+        Method compute = PolicyMgrUserGroupBuilder.class.getDeclaredMethod("computeUserDelta", Map.class);
+        compute.setAccessible(true);
+        compute.invoke(builder, source);
+
+        Map<String, XUserInfo> deltaUsers  = getPrivate(builder, "deltaUsers", Map.class);
+        Map<String, String>    userNameMap = getPrivate(builder, "userNameMap", Map.class);
+
+        assertTrue(deltaUsers.containsKey("john"));
+        assertEquals("john", userNameMap.get(newDn));
+        assertFalse(userNameMap.containsKey(oldDn));
+    }
+
+    @Test
+    public void testAL_computeUserDelta_dnValidationDisabled_skipsOuMove() throws Exception {
+        PolicyMgrUserGroupBuilder builder = new PolicyMgrUserGroupBuilder();
+
+        String oldDn = "cn=john,ou=People,dc=example,dc=com";
+        String newDn = "cn=john,ou=Moved,dc=example,dc=com";
+
+        Map<String, XUserInfo> userCache = new HashMap<>();
+        XUserInfo              existing  = new XUserInfo();
+        existing.setName("john");
+        existing.setSyncSource("LDAP/AD");
+        Map<String, String> oldAttrs = new HashMap<>();
+        oldAttrs.put(UgsyncCommonConstants.ORIGINAL_NAME, "john");
+        oldAttrs.put(UgsyncCommonConstants.FULL_NAME, oldDn);
+        oldAttrs.put(UgsyncCommonConstants.SYNC_SOURCE, "LDAP/AD");
+        existing.setOtherAttrsMap(oldAttrs);
+        existing.setOtherAttributes(JsonUtils.objectToJson(oldAttrs));
+        userCache.put("john", existing);
+
+        setPrivate(builder, "userCache", userCache);
+        setPrivate(builder, "userNameMap", new HashMap<String, String>());
+        setPrivate(builder, "policyMgrUserName", "rangerusersync");
+        setPrivate(builder, "isStartupFlag", false);
+        setPrivate(builder, "isDnValidationEnabled", false);
+        setPrivate(builder, "isSyncSourceValidationEnabled", true);
+
+        Map<String, String> newAttrs = new HashMap<>();
+        newAttrs.put(UgsyncCommonConstants.ORIGINAL_NAME, "john");
+        newAttrs.put(UgsyncCommonConstants.FULL_NAME, oldDn);
+        newAttrs.put(UgsyncCommonConstants.SYNC_SOURCE, "LDAP/AD");
+
+        Map<String, Map<String, String>> source = new HashMap<>();
+        source.put(newDn, newAttrs);
+
+        Method compute = PolicyMgrUserGroupBuilder.class.getDeclaredMethod("computeUserDelta", Map.class);
+        compute.setAccessible(true);
+        compute.invoke(builder, source);
+
+        Map<String, XUserInfo> deltaUsers = getPrivate(builder, "deltaUsers", Map.class);
+        assertFalse(deltaUsers.containsKey("john"));
+    }
+
+    @Test
+    public void testAM_computeUserDelta_startupSyncSourceChange_dnValidationDisabled_updates() throws Exception {
+        PolicyMgrUserGroupBuilder builder = new PolicyMgrUserGroupBuilder();
+
+        String oldDn = "cn=john,ou=People,dc=example,dc=com";
+        String newDn = "cn=john,ou=Moved,dc=example,dc=com";
+
+        Map<String, XUserInfo> userCache = new HashMap<>();
+        XUserInfo              existing  = new XUserInfo();
+        existing.setName("john");
+        existing.setSyncSource("Unix");
+        Map<String, String> oldAttrs = new HashMap<>();
+        oldAttrs.put(UgsyncCommonConstants.ORIGINAL_NAME, "john");
+        oldAttrs.put(UgsyncCommonConstants.FULL_NAME, oldDn);
+        oldAttrs.put(UgsyncCommonConstants.SYNC_SOURCE, "Unix");
+        existing.setOtherAttrsMap(oldAttrs);
+        existing.setOtherAttributes(JsonUtils.objectToJson(oldAttrs));
+        userCache.put("john", existing);
+
+        setPrivate(builder, "userCache", userCache);
+        setPrivate(builder, "userNameMap", new HashMap<String, String>());
+        setPrivate(builder, "policyMgrUserName", "rangerusersync");
+        setPrivate(builder, "isStartupFlag", true);
+        setPrivate(builder, "isSyncSourceValidationEnabled", false);
+        setPrivate(builder, "isDnValidationEnabled", false);
+
+        Map<String, String> newAttrs = new HashMap<>();
+        newAttrs.put(UgsyncCommonConstants.ORIGINAL_NAME, "john");
+        newAttrs.put(UgsyncCommonConstants.FULL_NAME, newDn);
+        newAttrs.put(UgsyncCommonConstants.SYNC_SOURCE, "LDAP/AD");
+
+        Map<String, Map<String, String>> source = new HashMap<>();
+        source.put(newDn, newAttrs);
+
+        Method compute = PolicyMgrUserGroupBuilder.class.getDeclaredMethod("computeUserDelta", Map.class);
+        compute.setAccessible(true);
+        compute.invoke(builder, source);
+
+        Map<String, XUserInfo> deltaUsers  = getPrivate(builder, "deltaUsers", Map.class);
+        Map<String, String>    userNameMap = getPrivate(builder, "userNameMap", Map.class);
+
+        assertTrue(deltaUsers.containsKey("john"));
+        assertEquals("john", userNameMap.get(newDn));
+    }
+
+    @Test
+    public void testAN_computeGroupDelta_dnValidationEnabled_ouMoveUpdates() throws Exception {
+        UserGroupSyncConfig cfg = UserGroupSyncConfig.getInstance();
+        cfg.setProperty(UserGroupSyncConfig.UGSYNC_NAME_VALIDATION_ENABLED, "false");
+
+        PolicyMgrUserGroupBuilder builder = new PolicyMgrUserGroupBuilder();
+
+        String oldDn = "cn=engineering,ou=Groups,dc=example,dc=com";
+        String newDn = "cn=engineering,ou=Moved,dc=example,dc=com";
+
+        Map<String, XGroupInfo> groupCache = new HashMap<>();
+        XGroupInfo                existing   = new XGroupInfo();
+        existing.setName("engineering");
+        existing.setSyncSource("LDAP/AD");
+        Map<String, String> oldAttrs = new HashMap<>();
+        oldAttrs.put(UgsyncCommonConstants.ORIGINAL_NAME, "engineering");
+        oldAttrs.put(UgsyncCommonConstants.FULL_NAME, oldDn);
+        oldAttrs.put(UgsyncCommonConstants.SYNC_SOURCE, "LDAP/AD");
+        existing.setOtherAttrsMap(oldAttrs);
+        existing.setOtherAttributes(JsonUtils.objectToJson(oldAttrs));
+        groupCache.put("engineering", existing);
+
+        setPrivate(builder, "groupCache", groupCache);
+        setPrivate(builder, "groupNameMap", new HashMap<String, String>());
+        setPrivate(builder, "isStartupFlag", false);
+        setPrivate(builder, "isDnValidationEnabled", true);
+        setPrivate(builder, "isSyncSourceValidationEnabled", true);
+
+        Map<String, String> newAttrs = new HashMap<>();
+        newAttrs.put(UgsyncCommonConstants.ORIGINAL_NAME, "engineering");
+        newAttrs.put(UgsyncCommonConstants.FULL_NAME, newDn);
+        newAttrs.put(UgsyncCommonConstants.SYNC_SOURCE, "LDAP/AD");
+
+        Map<String, Map<String, String>> source = new HashMap<>();
+        source.put(newDn, newAttrs);
+
+        Method compute = PolicyMgrUserGroupBuilder.class.getDeclaredMethod("computeGroupDelta", Map.class);
+        compute.setAccessible(true);
+        compute.invoke(builder, source);
+
+        Map<String, XGroupInfo> deltaGroups  = getPrivate(builder, "deltaGroups", Map.class);
+        Map<String, String>     groupNameMap = getPrivate(builder, "groupNameMap", Map.class);
+
+        assertTrue(deltaGroups.containsKey("engineering"));
+        assertEquals("engineering", groupNameMap.get(newDn));
+        assertFalse(groupNameMap.containsKey(oldDn));
+    }
+
+    @Test
+    public void testAO_computeGroupDelta_dnValidationDisabled_skipsOuMove() throws Exception {
+        UserGroupSyncConfig cfg = UserGroupSyncConfig.getInstance();
+        cfg.setProperty(UserGroupSyncConfig.UGSYNC_NAME_VALIDATION_ENABLED, "false");
+
+        PolicyMgrUserGroupBuilder builder = new PolicyMgrUserGroupBuilder();
+
+        String oldDn = "cn=engineering,ou=Groups,dc=example,dc=com";
+        String newDn = "cn=engineering,ou=Moved,dc=example,dc=com";
+
+        Map<String, XGroupInfo> groupCache = new HashMap<>();
+        XGroupInfo                existing   = new XGroupInfo();
+        existing.setName("engineering");
+        existing.setSyncSource("LDAP/AD");
+        Map<String, String> oldAttrs = new HashMap<>();
+        oldAttrs.put(UgsyncCommonConstants.ORIGINAL_NAME, "engineering");
+        oldAttrs.put(UgsyncCommonConstants.FULL_NAME, oldDn);
+        oldAttrs.put(UgsyncCommonConstants.SYNC_SOURCE, "LDAP/AD");
+        existing.setOtherAttrsMap(oldAttrs);
+        existing.setOtherAttributes(JsonUtils.objectToJson(oldAttrs));
+        groupCache.put("engineering", existing);
+
+        setPrivate(builder, "groupCache", groupCache);
+        setPrivate(builder, "groupNameMap", new HashMap<String, String>());
+        setPrivate(builder, "isStartupFlag", false);
+        setPrivate(builder, "isDnValidationEnabled", false);
+        setPrivate(builder, "isSyncSourceValidationEnabled", true);
+
+        Map<String, String> newAttrs = new HashMap<>();
+        newAttrs.put(UgsyncCommonConstants.ORIGINAL_NAME, "engineering");
+        newAttrs.put(UgsyncCommonConstants.FULL_NAME, oldDn);
+        newAttrs.put(UgsyncCommonConstants.SYNC_SOURCE, "LDAP/AD");
+
+        Map<String, Map<String, String>> source = new HashMap<>();
+        source.put(newDn, newAttrs);
+
+        Method compute = PolicyMgrUserGroupBuilder.class.getDeclaredMethod("computeGroupDelta", Map.class);
+        compute.setAccessible(true);
+        compute.invoke(builder, source);
+
+        Map<String, XGroupInfo> deltaGroups = getPrivate(builder, "deltaGroups", Map.class);
+        assertFalse(deltaGroups.containsKey("engineering"));
+    }
+
+    @Test
+    public void testAP_computeGroupDelta_startupSyncSourceChange_dnValidationDisabled_skips() throws Exception {
+        UserGroupSyncConfig cfg = UserGroupSyncConfig.getInstance();
+        cfg.setProperty(UserGroupSyncConfig.UGSYNC_NAME_VALIDATION_ENABLED, "false");
+
+        PolicyMgrUserGroupBuilder builder = new PolicyMgrUserGroupBuilder();
+
+        String oldDn = "cn=engineering,ou=Groups,dc=example,dc=com";
+        String newDn = "cn=engineering,ou=Moved,dc=example,dc=com";
+
+        Map<String, XGroupInfo> groupCache = new HashMap<>();
+        XGroupInfo                existing   = new XGroupInfo();
+        existing.setName("engineering");
+        existing.setSyncSource("Unix");
+        Map<String, String> oldAttrs = new HashMap<>();
+        oldAttrs.put(UgsyncCommonConstants.ORIGINAL_NAME, "engineering");
+        oldAttrs.put(UgsyncCommonConstants.FULL_NAME, oldDn);
+        oldAttrs.put(UgsyncCommonConstants.SYNC_SOURCE, "Unix");
+        existing.setOtherAttrsMap(oldAttrs);
+        existing.setOtherAttributes(JsonUtils.objectToJson(oldAttrs));
+        groupCache.put("engineering", existing);
+
+        setPrivate(builder, "groupCache", groupCache);
+        setPrivate(builder, "groupNameMap", new HashMap<String, String>());
+        setPrivate(builder, "isStartupFlag", true);
+        setPrivate(builder, "isSyncSourceValidationEnabled", false);
+        setPrivate(builder, "isDnValidationEnabled", false);
+
+        Map<String, String> newAttrs = new HashMap<>();
+        newAttrs.put(UgsyncCommonConstants.ORIGINAL_NAME, "engineering");
+        newAttrs.put(UgsyncCommonConstants.FULL_NAME, newDn);
+        newAttrs.put(UgsyncCommonConstants.SYNC_SOURCE, "LDAP/AD");
+
+        Map<String, Map<String, String>> source = new HashMap<>();
+        source.put(newDn, newAttrs);
+
+        Method compute = PolicyMgrUserGroupBuilder.class.getDeclaredMethod("computeGroupDelta", Map.class);
+        compute.setAccessible(true);
+        compute.invoke(builder, source);
+
+        Map<String, XGroupInfo> deltaGroups  = getPrivate(builder, "deltaGroups", Map.class);
+        Map<String, String>     groupNameMap = getPrivate(builder, "groupNameMap", Map.class);
+
+        assertTrue(deltaGroups.containsKey("engineering"));
+        assertEquals("engineering", groupNameMap.get(newDn));
     }
 }

@@ -29,10 +29,13 @@ import {
   pick,
   intersection,
   find,
-  sortBy
+  sortBy,
+  reject,
+  includes
 } from "lodash";
 import { ModalLoader } from "Components/CommonComponents";
 import { additionalServiceConfigs } from "Utils/XAEnums";
+import { getPolicyPermissionItemDisplayLbl } from "Utils/XAUtils";
 
 export const ServiceViewDetails = (props) => {
   const { serviceData: service, serviceDefData } = props;
@@ -77,8 +80,13 @@ export const ServiceViewDetails = (props) => {
     let configs = {};
     let customConfigs = {};
 
-    let serviceDefConfigs = serviceDef?.configs?.filter(
-      (config) => config.name !== "ranger.plugin.audit.filters"
+    const excludedServiceConfig = [
+      "ranger.plugin.audit.filters",
+      ...map(additionalServiceConfigs, "name")
+    ];
+
+    let serviceDefConfigs = reject(serviceDef?.configs, (config) =>
+      includes(excludedServiceConfig, config.name)
     );
 
     serviceConfigs = omit(serviceConfigs, "ranger.plugin.audit.filters");
@@ -261,13 +269,17 @@ export const ServiceViewDetails = (props) => {
           </td>
           <td className="text-center">
             {a.accessTypes !== undefined && a.accessTypes.length > 0
-              ? a.accessTypes.map((accessType) => (
+              ? getPolicyPermissionItemDisplayLbl(
+                  serviceDefData,
+                  0,
+                  a.accessTypes
+                ).map((accessType) => (
                   <Badge
                     bg="info"
                     className="m-1 text-truncate"
-                    key={accessType}
+                    key={accessType.label}
                   >
-                    {accessType}
+                    {accessType.label}
                   </Badge>
                 ))
               : "--"}

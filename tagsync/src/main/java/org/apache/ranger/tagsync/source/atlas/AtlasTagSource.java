@@ -19,6 +19,8 @@
 
 package org.apache.ranger.tagsync.source.atlas;
 
+import org.apache.atlas.ApplicationProperties;
+import org.apache.atlas.AtlasException;
 import org.apache.atlas.kafka.AtlasKafkaMessage;
 import org.apache.atlas.kafka.NotificationProvider;
 import org.apache.atlas.model.notification.EntityNotification;
@@ -26,34 +28,45 @@ import org.apache.atlas.notification.NotificationConsumer;
 import org.apache.atlas.notification.NotificationInterface;
 import org.apache.commons.collections.CollectionUtils;
 import org.apache.commons.collections.MapUtils;
+import org.apache.commons.configuration.Configuration;
 import org.apache.commons.lang3.StringUtils;
+import org.apache.hadoop.util.StopWatch;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.ranger.authorization.utils.JsonUtils;
 import org.apache.ranger.plugin.util.ServiceTags;
+import org.apache.ranger.tagsync.metrics.source.RangerTagSyncMetricsSourceTags;
 import org.apache.ranger.tagsync.model.AbstractTagSource;
 import org.apache.ranger.tagsync.process.TagSyncConfig;
 import org.apache.ranger.tagsync.source.atlasrest.RangerAtlasEntityWithTags;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 public class AtlasTagSource extends AbstractTagSource {
     private static final Logger LOG = LoggerFactory.getLogger(AtlasTagSource.class);
 
     public static final String TAGSYNC_ATLAS_PROPERTIES_FILE_NAME = "atlas-application.properties";
-    public static final String TAGSYNC_ATLAS_KAFKA_ENDPOINTS    = "atlas.kafka.bootstrap.servers";
-    public static final String TAGSYNC_ATLAS_ZOOKEEPER_ENDPOINT = "atlas.kafka.zookeeper.connect";
-    public static final String TAGSYNC_ATLAS_CONSUMER_GROUP     = "atlas.kafka.entities.group.id";
-    public static final int MAX_WAIT_TIME_IN_MILLIS = 1000;
-    private int maxBatchSize;
+    public static final String TAGSYNC_ATLAS_KAFKA_ENDPOINTS      = "atlas.kafka.bootstrap.servers";
+    public static final String TAGSYNC_ATLAS_CONSUMER_GROUP       = "atlas.kafka.entities.group.id";
+    public static final int    MAX_WAIT_TIME_IN_MILLIS            = 1000;
+    protected static final AtomicBoolean isTagAssociated = new AtomicBoolean(true);
 
+    public static void setTagAssociated(boolean tagAssociated) {
+        isTagAssociated.set(tagAssociated);
+    }
+
+    public static boolean isTagAssociated() {
+        return isTagAssociated.get();
+    }
+
+    private int              maxBatchSize;
     private ConsumerRunnable consumerTask;
     private Thread           myThread;
 
@@ -61,55 +74,21 @@ public class AtlasTagSource extends AbstractTagSource {
     public boolean initialize(Properties properties) {
         LOG.debug("==> AtlasTagSource.initialize()");
 
-        Properties atlasProperties = new Properties();
-
         boolean ret = AtlasResourceMapperUtil.initializeAtlasResourceMappers(properties);
 
         if (ret) {
-            InputStream inputStream = getClass().getClassLoader().getResourceAsStream(TAGSYNC_ATLAS_PROPERTIES_FILE_NAME);
+            Configuration atlasConfiguration = loadAtlasConfiguration();
 
-            if (inputStream != null) {
-                try {
-                    atlasProperties.load(inputStream);
-                } catch (Exception exception) {
-                    ret = false;
-                    LOG.error("Cannot load Atlas application properties file, file-name: {}", TAGSYNC_ATLAS_PROPERTIES_FILE_NAME, exception);
-                } finally {
-                    try {
-                        inputStream.close();
-                    } catch (IOException ioException) {
-                        LOG.error("Cannot close Atlas application properties file, file-name: {}", TAGSYNC_ATLAS_PROPERTIES_FILE_NAME, ioException);
-                    }
-                }
-            } else {
-                ret = false;
-                LOG.error("Cannot find Atlas application properties file");
+            ret = validateRequiredAtlasKafkaProperties(atlasConfiguration);
+
+            if (ret) {
+                NotificationInterface                          notification = NotificationProvider.get();
+                List<NotificationConsumer<EntityNotification>> iterators    = notification.createConsumers(NotificationInterface.NotificationType.ENTITIES, 1);
+
+                maxBatchSize = TagSyncConfig.getSinkMaxBatchSize(properties);
+                consumerTask = new ConsumerRunnable(iterators.get(0));
             }
         }
-
-        if (ret) {
-            if (StringUtils.isBlank(atlasProperties.getProperty(TAGSYNC_ATLAS_KAFKA_ENDPOINTS))) {
-                ret = false;
-                LOG.error("Value of property '{}' is not specified!", TAGSYNC_ATLAS_KAFKA_ENDPOINTS);
-            }
-            if (StringUtils.isBlank(atlasProperties.getProperty(TAGSYNC_ATLAS_ZOOKEEPER_ENDPOINT))) {
-                ret = false;
-                LOG.error("Value of property '{}' is not specified!", TAGSYNC_ATLAS_ZOOKEEPER_ENDPOINT);
-            }
-            if (StringUtils.isBlank(atlasProperties.getProperty(TAGSYNC_ATLAS_CONSUMER_GROUP))) {
-                ret = false;
-                LOG.error("Value of property '{}' is not specified!", TAGSYNC_ATLAS_CONSUMER_GROUP);
-            }
-        }
-
-        if (ret) {
-            NotificationInterface                          notification = NotificationProvider.get();
-            List<NotificationConsumer<EntityNotification>> iterators    = notification.createConsumers(NotificationInterface.NotificationType.ENTITIES, 1);
-
-            consumerTask = new ConsumerRunnable(iterators.get(0));
-        }
-
-        maxBatchSize = TagSyncConfig.getSinkMaxBatchSize(properties);
 
         LOG.debug("<== AtlasTagSource.initialize(), result={}", ret);
 
@@ -120,21 +99,84 @@ public class AtlasTagSource extends AbstractTagSource {
     public boolean start() {
         LOG.debug("==> AtlasTagSource.start()");
 
+        boolean ret = false;
+
         if (consumerTask == null) {
             LOG.error("No consumerTask!!!");
         } else {
             myThread = new Thread(consumerTask);
+
             myThread.setDaemon(true);
             myThread.start();
+
+            ret = true;
         }
-        LOG.debug("<== AtlasTagSource.start()");
-        return myThread != null;
+
+        LOG.debug("<== AtlasTagSource.start(): ret={}", ret);
+
+        return ret;
     }
 
     @Override
     public void stop() {
         if (myThread != null && myThread.isAlive()) {
             myThread.interrupt();
+        }
+    }
+
+    boolean validateRequiredAtlasKafkaProperties(Properties atlasProperties) {
+        boolean ret = true;
+
+        if (atlasProperties == null) {
+            ret = false;
+        } else {
+            if (StringUtils.isBlank(atlasProperties.getProperty(TAGSYNC_ATLAS_KAFKA_ENDPOINTS))) {
+                LOG.error("missing value for mandatory property '{}'", TAGSYNC_ATLAS_KAFKA_ENDPOINTS);
+
+                ret = false;
+            }
+
+            if (StringUtils.isBlank(atlasProperties.getProperty(TAGSYNC_ATLAS_CONSUMER_GROUP))) {
+                LOG.error("missing value for mandatory property '{}'", TAGSYNC_ATLAS_CONSUMER_GROUP);
+
+                ret = false;
+            }
+        }
+
+        return ret;
+    }
+
+    boolean validateRequiredAtlasKafkaProperties(Configuration atlasConfiguration) {
+        boolean ret = true;
+
+        if (atlasConfiguration == null) {
+            ret = false;
+        } else {
+            if (StringUtils.isBlank(atlasConfiguration.getString(TAGSYNC_ATLAS_KAFKA_ENDPOINTS))) {
+                LOG.error("missing value for mandatory property '{}'", TAGSYNC_ATLAS_KAFKA_ENDPOINTS);
+
+                ret = false;
+            }
+
+            if (StringUtils.isBlank(atlasConfiguration.getString(TAGSYNC_ATLAS_CONSUMER_GROUP))) {
+                LOG.error("missing value for mandatory property '{}'", TAGSYNC_ATLAS_CONSUMER_GROUP);
+
+                ret = false;
+            }
+        }
+
+        return ret;
+    }
+
+    private Configuration loadAtlasConfiguration() {
+        try {
+            ApplicationProperties.forceReload();
+
+            return ApplicationProperties.get();
+        } catch (AtlasException exception) {
+            LOG.error("Cannot load Atlas application properties file: {}", TAGSYNC_ATLAS_PROPERTIES_FILE_NAME, exception);
+
+            return null;
         }
     }
 
@@ -170,8 +212,10 @@ public class AtlasTagSource extends AbstractTagSource {
             while (true) {
                 if (TagSyncConfig.isTagSyncServiceActive()) {
                     LOG.debug("==> ConsumerRunnable.run() is running as server is active");
+                    StopWatch eventStopWatch = null;
                     try {
                         List<AtlasKafkaMessage<EntityNotification>> newMessages = consumer.receive(MAX_WAIT_TIME_IN_MILLIS);
+                        eventStopWatch = new StopWatch().start();
 
                         if (newMessages.isEmpty()) {
                             LOG.debug("AtlasTagSource.ConsumerRunnable.run: no message from NotificationConsumer within {} milliseconds", MAX_WAIT_TIME_IN_MILLIS);
@@ -180,6 +224,8 @@ public class AtlasTagSource extends AbstractTagSource {
                                 buildAndUploadServiceTags();
                             }
                         } else {
+                            setTagAssociated(true);
+                            RangerTagSyncMetricsSourceTags.updateTotalEvents(Long.valueOf(newMessages.size()));
                             for (AtlasKafkaMessage<EntityNotification> message : newMessages) {
                                 EntityNotification notification = message != null ? message.getMessage() : null;
 
@@ -216,6 +262,12 @@ public class AtlasTagSource extends AbstractTagSource {
                                 buildAndUploadServiceTags();
                             }
                         }
+                        eventStopWatch.stop();
+                        long timeElapsed = TimeUnit.MILLISECONDS.convert(eventStopWatch.now(), TimeUnit.NANOSECONDS);
+                        RangerTagSyncMetricsSourceTags.updateTotalEventsTime(timeElapsed);
+                        if (isTagAssociated()) {
+                            RangerTagSyncMetricsSourceTags.updateTotalUploadsTime(timeElapsed);
+                        }
                         if (lastUnhandledMessage != null) {
                             commitToKafka(lastUnhandledMessage);
                             lastUnhandledMessage = null;
@@ -229,6 +281,10 @@ public class AtlasTagSource extends AbstractTagSource {
                             LOG.error("Interrupted: ", interrupted);
                             LOG.error("Returning from thread. May cause process to be up but not processing events!!");
                             return;
+                        }
+                    } finally {
+                        if (eventStopWatch != null) {
+                            eventStopWatch.close();
                         }
                     }
                 } else {

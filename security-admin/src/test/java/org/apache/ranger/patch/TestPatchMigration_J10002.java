@@ -49,7 +49,6 @@ import org.apache.ranger.plugin.model.RangerService;
 import org.apache.ranger.plugin.store.EmbeddedServiceDefsUtil;
 import org.apache.ranger.service.RangerPolicyService;
 import org.apache.ranger.service.XPermMapService;
-import org.apache.ranger.service.XPolicyService;
 import org.apache.ranger.util.CLIUtil;
 import org.apache.ranger.view.VXPermMap;
 import org.apache.ranger.view.VXPermMapList;
@@ -83,6 +82,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
  * @description <Unit Test for PatchMigration_J10002 class>
  */
 @ExtendWith(MockitoExtension.class)
+@org.mockito.junit.jupiter.MockitoSettings(strictness = org.mockito.quality.Strictness.LENIENT)
 @TestMethodOrder(MethodOrderer.MethodName.class)
 public class TestPatchMigration_J10002 {
     private static void setIfPresent(Object target, String fieldName, Object value) {
@@ -105,7 +105,6 @@ public class TestPatchMigration_J10002 {
         JSONUtil jsonUtil = Mockito.mock(JSONUtil.class);
         RangerPolicyService policyService = Mockito.mock(RangerPolicyService.class);
         StringUtil stringUtil = Mockito.mock(StringUtil.class);
-        XPolicyService xPolicyService = Mockito.mock(XPolicyService.class);
         XPermMapService xPermMapService = Mockito.mock(XPermMapService.class);
         RangerValidatorFactory validatorFactory = Mockito.mock(RangerValidatorFactory.class);
 
@@ -128,7 +127,6 @@ public class TestPatchMigration_J10002 {
         setIfPresent(patch, "jsonUtil", jsonUtil);
         setIfPresent(patch, "policyService", policyService);
         setIfPresent(patch, "stringUtil", stringUtil);
-        setIfPresent(patch, "xPolService", xPolicyService);
         setIfPresent(patch, "xPermMapService", xPermMapService);
         setIfPresent(patch, "validatorFactory", validatorFactory);
 

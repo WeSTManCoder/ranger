@@ -16,7 +16,7 @@
 # https://cwiki.apache.org/confluence/display/INFRA/git+-+.asf.yaml+features
 
 github:
-  description: "Apache Ranger - To enable, monitor and manage comprehensive data security across the Hadoop platform and beyond"
+  description: "Apache Ranger - Centralized, fine-grained authorization and auditing across data and AI platforms"
   homepage: https://ranger.apache.org
   labels:
     - apache
@@ -31,6 +31,8 @@ github:
     squash:  true
     merge:   false
     rebase:  false
+  ghp_branch: gh-pages
+  ghp_path: /
   protected_branches:
     master: {}
 

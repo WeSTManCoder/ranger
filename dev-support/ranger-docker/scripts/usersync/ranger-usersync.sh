@@ -28,6 +28,7 @@ then
   if [ "${KERBEROS_ENABLED}" == "true" ]
   then
     ${RANGER_SCRIPTS}/wait_for_keytab.sh rangerusersync.keytab
+    ${RANGER_SCRIPTS}/wait_for_testusers_keytab.sh
   fi
 
   cd "${RANGER_HOME}"/usersync || exit
@@ -44,9 +45,9 @@ then
   fi
 fi
 
-cd ${RANGER_HOME}/usersync && ./start.sh
+cd ${RANGER_HOME}/usersync && ./ranger-usersync-services.sh start
 
-RANGER_USERSYNC_PID=`ps -ef  | grep -v grep | grep -i "org.apache.ranger.authentication.UnixAuthenticationService" | awk '{print $2}'`
+RANGER_USERSYNC_PID=`ps -ef  | grep -v grep | grep -i "org.apache.ranger.authentication.server.RangerUserSyncServer" | awk '{print $2}'`
 
 # prevent the container from exiting
 if [ -z "$RANGER_USERSYNC_PID" ]

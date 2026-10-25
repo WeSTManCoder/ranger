@@ -19,6 +19,14 @@
     <properties>
         <project.build.sourceEncoding>ISO-8859-1</project.build.sourceEncoding>
         <project.reporting.outputEncoding>ISO-8859-1</project.reporting.outputEncoding>
+        <javac.source.version>17</javac.source.version>
+        <javac.target.version>17</javac.target.version>
+        <maven-compiler-plugin.version>3.8.1</maven-compiler-plugin.version>
+        <maven-project-info-reports-plugin.version>2.4</maven-project-info-reports-plugin.version>
+        <maven-resources-plugin.version>3.2.0</maven-resources-plugin.version>
+        <maven-site-plugin.version>3.7</maven-site-plugin.version>
+        <!-- maven-site-plugin 3.7 requires Velocity 1.x for the reflow skin -->
+        <velocity.version>1.7</velocity.version>
     </properties>
     <name>Apache Ranger</name>
     <description>
@@ -526,6 +534,18 @@
                 Tset
             </organization>
         </developer>
+        <developer>
+            <id>vikaskumar</id>
+            <name>Vikas Kumar</name>
+            <email>vikaskumar@apache.org</email>
+            <timezone>Asia/Kolkata</timezone>
+            <roles>
+                <role>Committer</role>
+            </roles>
+            <organization>
+                Cloudera
+            </organization>
+        </developer>
     </developers>
     <contributors>
         <contributor>
@@ -949,7 +969,7 @@
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-resources-plugin</artifactId>
-                    <version>2.4.3</version>
+                    <version>${maven-resources-plugin.version}</version>
                     <configuration>
                         <encoding>UTF-8</encoding>
                     </configuration>
@@ -958,11 +978,16 @@
                     <inherited>true</inherited>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-compiler-plugin</artifactId>
+                    <version>${maven-compiler-plugin.version}</version>
+                    <configuration>
+                        <source>${javac.source.version}</source>
+                        <target>${javac.target.version}</target>
+                    </configuration>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>
                     <artifactId>maven-site-plugin</artifactId>
-                    <version>3.7</version>
+                    <version>${maven-site-plugin.version}</version>
                     <dependencies>
                       <dependency>
                         <groupId>io.github.olamy.maven.skins</groupId>
@@ -972,7 +997,7 @@
                       <dependency>
                         <groupId>org.apache.velocity</groupId>
                         <artifactId>velocity</artifactId>
-                        <version>1.7</version>
+                        <version>${velocity.version}</version>
                       </dependency>
                     </dependencies>
                     <configuration>
@@ -988,7 +1013,7 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-project-info-reports-plugin</artifactId>
-                <version>2.4</version>
+                <version>${maven-project-info-reports-plugin.version}</version>
                 <reportSets>
                     <reportSet>
                         <reports>

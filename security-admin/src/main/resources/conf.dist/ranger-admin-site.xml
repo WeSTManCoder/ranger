@@ -80,6 +80,49 @@
 		<value>true</value>
 	</property>
 	<property>
+		<name>ranger.audit.opensearch.urls</name>
+		<value></value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.protocol</name>
+		<value>http</value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.port</name>
+		<value>9200</value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.user</name>
+		<value></value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.password</name>
+		<value></value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.index</name>
+		<value>ranger_audits</value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.authentication.type</name>
+		<value></value>
+		<description>OpenSearch authentication scheme: kerberos, basic, or none. When left empty it is inferred (kerberos if the password/keytab points to a keytab file, basic if user and password are set, otherwise none).</description>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.kerberos.principal</name>
+		<value></value>
+		<description>Kerberos principal used when authentication.type=kerberos. Falls back to ranger.audit.opensearch.user when unset.</description>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.kerberos.keytab</name>
+		<value></value>
+		<description>Path to the Kerberos keytab used when authentication.type=kerberos. Falls back to ranger.audit.opensearch.password when unset.</description>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.bootstrap.enabled</name>
+		<value>true</value>
+	</property>
+	<property>
 		<name>ranger.audit.amazon_cloudwatch.region</name>
 		<value>us-east-2</value>
 	</property>
@@ -98,7 +141,7 @@
 	</property>
 	<property>
 		<name>ranger.audit.source.type</name>
-		<value>db</value>
+		<value>solr</value>
 		<description></description>
 	</property>
 
@@ -259,10 +302,6 @@
 		<value>https://127.0.0.1:8443/gateway/knoxsso/api/v1/websso</value>
 	</property>
 	<property>
-		<name>ranger.sso.publicKey</name>
-		<value></value>
-	</property>
-	<property>
 		<name>ranger.sso.enabled</name>
 		<value>false</value>
 	</property>	
@@ -271,6 +310,39 @@
 		<value>Mozilla,chrome</value>
 	</property>
 	<!-- SSO Properties Ends-->
+	<property>
+		<name>ranger.admin.healthcheck.username</name>
+		<value>healthcheck</value>
+	</property>
+	<!-- Trusted header auth properties start -->
+	<property>
+		<name>ranger.admin.authn.header.enabled</name>
+		<value>false</value>
+	</property>
+	<property>
+		<name>ranger.admin.authn.header.username</name>
+		<value></value>
+	</property>
+	<property>
+		<name>ranger.admin.authn.header.spiffe</name>
+		<value></value>
+		<description>Comma-separated list of HTTP header name(s) carrying a SPIFFE ID (e.g. spiffe://cluster/ns/&lt;ns&gt;/sa/&lt;service-account&gt;). A single header name is also valid. The full SPIFFE ID is used as the authenticated principal. When multiple headers are configured, the first one carrying a well-formed SPIFFE ID is used. Consulted only when the username header is absent.</description>
+	</property>
+	<property>
+		<name>ranger.admin.authn.header.requestid</name>
+		<value></value>
+	</property>
+	<property>
+		<name>ranger.admin.authn.header.roles</name>
+		<value></value>
+		<description>Name of the HTTP header (e.g. X-Forwarded-Roles) carrying a comma-separated list of roles to assign to the authenticated user. Accepted values are role names RANGER_ROLE_ADMIN, RANGER_ROLE_AUDITOR, RANGER_ROLE_USER, RANGER_ROLE_KEY_ADMIN, and RANGER_ROLE_KEY_ADMIN_AUDITOR. Values that are not recognized are ignored.</description>
+	</property>
+	<property>
+		<name>ranger.admin.spiffe.as.username.enabled</name>
+		<value>false</value>
+		<description>When enabled, ':' is accepted as a valid character in usernames so that SPIFFE IDs (e.g. spiffe://spiffe.example.com/ns/sales/sa/trino) can be used as service-account usernames. Disabled by default.</description>
+	</property>
+	<!-- Trusted header auth properties end -->
 	<!-- Kerberos Properties starts-->	
 	<property>
 		<name>ranger.admin.kerberos.token.valid.seconds</name>
@@ -317,6 +389,16 @@
 		<name>ranger.downloadpolicy.session.log.enabled</name>
 		<value>false</value>
 	</property>
+	<!-- User-store download Properties starts-->
+	<property>
+		<name>ranger.admin.userstore.include.usergroups.mappings</name>
+		<value>false</value>
+		<description>
+			When set to true, the user-store download API includes the user-to-group mappings (userGroupMapping) in the response payload,
+		</description>
+	</property>
+	<!-- User-store download Properties ends-->
+
 	<!-- Service user for KMS -->
     <property>
     	<name>ranger.kms.service.user.hdfs</name>
@@ -407,6 +489,16 @@
 			</name>
 			<value>0</value>
 		</property>
+		<property>
+			<name>ranger.admin.super.users</name>
+			<value></value>
+			<description>Comma-separated list of users granted full Ranger administrative privileges at login (system admin capabilities), independent of database roles. Empty or absent disables config-based super users.</description>
+		</property>
+		<property>
+			<name>ranger.admin.super.groups</name>
+			<value></value>
+			<description>Comma-separated list of groups whose members are granted full Ranger administrative privileges at login (system admin capabilities), independent of database roles. Empty or absent disables config-based super groups.</description>
+		</property>
 	<property>
 		<name>xasecure.audit.jaas.Client.loginModuleName</name>
 		<value></value>
@@ -439,4 +531,8 @@
 		<name>xasecure.audit.jaas.Client.option.principal</name>
 		<value></value>
 	</property>
+    <property>
+        <name>ranger.servicedef.ozone.enableActionMatcherInPoliciesCondition</name>
+        <value>false</value>
+    </property>
 </configuration>

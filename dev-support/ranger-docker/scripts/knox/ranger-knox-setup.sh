@@ -25,13 +25,21 @@ EOF
 if [ "${KERBEROS_ENABLED}" == "true" ]
 then
   ${RANGER_SCRIPTS}/wait_for_keytab.sh knox.keytab
+  ${RANGER_SCRIPTS}/wait_for_testusers_keytab.sh
 fi
+
+cp ${RANGER_SCRIPTS}/core-site.xml /opt/knox/conf/
+cp ${RANGER_SCRIPTS}/hdfs-site.xml /opt/knox/conf/
 
 chown -R knox:knox /opt/knox/
 
 mkdir -p /opt/knox/logs
 chown -R knox:knox /opt/knox/
 chmod g+w /opt/knox/logs
+
+if ! grep -q 'knox-jdk17-env.sh' /opt/knox/bin/knox-env.sh 2>/dev/null; then
+  echo '. "${RANGER_SCRIPTS}/knox-jdk17-env.sh"' >> /opt/knox/bin/knox-env.sh
+fi
 
 cd ${RANGER_HOME}/ranger-knox-plugin
 ./enable-knox-plugin.sh

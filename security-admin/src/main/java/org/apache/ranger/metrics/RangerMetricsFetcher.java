@@ -22,6 +22,8 @@ package org.apache.ranger.metrics;
 import org.apache.ranger.biz.ServiceDBStore;
 import org.apache.ranger.biz.XUserMgr;
 import org.apache.ranger.common.RangerConstants;
+import org.apache.ranger.db.RangerDaoManager;
+import org.apache.ranger.plugin.model.RangerSecurityZone;
 import org.apache.ranger.service.XGroupService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -30,6 +32,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -49,8 +52,17 @@ public class RangerMetricsFetcher {
     @Autowired
     private XGroupService groupService;
 
+    @Autowired
+    RangerDaoManager daoMgr;
+
+    private final HashMap<String, Long> summaryReusable = new HashMap<>();
+    private final HashMap<Integer, Long> summaryPolicy  = new HashMap<>();
+    private final Map<Integer, Long> summaryTagPolicy   = new HashMap<>();
+
     public Long getGroupCount() {
-        return groupService.getAllGroupCount();
+        Long totalGroupCount = groupService.getAllGroupCount();
+        summaryReusable.put("TotalGroups", totalGroupCount);
+        return totalGroupCount;
     }
 
     public Map<String, Long> getUserMetrics() {
@@ -84,6 +96,7 @@ public class RangerMetricsFetcher {
         }
 
         ret.put("Total", total);
+        summaryReusable.put("TotalUsers", total);
 
         return ret;
     }
@@ -99,6 +112,7 @@ public class RangerMetricsFetcher {
         }
 
         ret.put("Total", total);
+        summaryReusable.put("TotalServices", total);
 
         return ret;
     }
@@ -108,14 +122,21 @@ public class RangerMetricsFetcher {
 
         Map<String, Long> ret   = new HashMap<>();
         long              total = 0L;
+        long              totalTagPolicies = 0L;
 
         for (Map.Entry<String, Long> entry : svcStore.getPolicyCountByTypeAndServiceType(policyType).entrySet()) {
             ret.put(entry.getKey(), entry.getValue());
 
             total += entry.getValue();
+
+            if ("tag".equalsIgnoreCase(entry.getKey())) {
+                totalTagPolicies += entry.getValue().longValue();
+            }
         }
 
         ret.put("Total", total);
+        summaryPolicy.put(policyType, total);
+        summaryTagPolicy.put(policyType, totalTagPolicies);
 
         return ret;
     }
@@ -146,6 +167,76 @@ public class RangerMetricsFetcher {
         }
 
         ret.put("Total", total);
+
+        return ret;
+    }
+
+    public Map<String, Long> getSummary() {
+        Map<String, Long> ret   = new HashMap<>(summaryReusable);
+
+        //policies
+        ret.put("TotalPolicies", summaryPolicy.values().stream().mapToLong(Long::longValue).sum());
+
+        //tag_policies
+        ret.put("TotalTagPolicies", summaryTagPolicy.values().stream().mapToLong(Long::longValue).sum());
+
+        //roles
+        ret.put("TotalRoles", daoMgr.getXXRole().getAllCount());
+
+        //securityzones (exclude the default "Unzoned" zone)
+        ret.put("TotalSecurityZones", Math.max(0, daoMgr.getXXSecurityZoneDao().getAllCount() - 1));
+
+        //x_trx_log_v2
+        ret.put("TotalAdminAudits", daoMgr.getXXTrxLogV2().getAllCount());
+
+        //x_auth_sess
+        ret.put("TotalLogins", daoMgr.getXXAuthSession().getAllCount());
+
+        //x_plugin_info
+        ret.put("TotalPlugins", daoMgr.getXXPluginInfo().getAllCount());
+
+        //x_policy_export_audit
+        ret.put("TotalPluginDownloads", daoMgr.getXXPolicyExportAudit().getAllCount());
+
+        //x_tag
+        ret.put("TotalTags", daoMgr.getXXTag().getAllCount());
+
+        return ret;
+    }
+
+    public Map<String, Long> getGdsMetrics() {
+        Map<String, Long> ret   = new HashMap<>();
+
+        //x_gds_dataset
+        ret.put("Dataset", daoMgr.getXXGdsDataset().getAllCount());
+
+        //x_gds_data_share
+        ret.put("DataShare", daoMgr.getXXGdsDataShare().getAllCount());
+
+        //x_gds_shared_resource
+        ret.put("SharedResource", daoMgr.getXXGdsSharedResource().getAllCount());
+
+        //x_gds_project
+        ret.put("Project", daoMgr.getXXGdsProject().getAllCount());
+
+        return ret;
+    }
+
+    public Map<String, Long> getSecurityZonePolicyMetrics() {
+        Map<String, Long> ret   = new HashMap<>();
+
+        //securityzonepolicy
+        ret.put("Count", daoMgr.getXXPolicy().getSecurityZonePolicyCount(RangerSecurityZone.RANGER_UNZONED_SECURITY_ZONE_ID));
+
+        return ret;
+    }
+
+    public Map<String, Long> getUserSyncMetrics() {
+        Map<String, Long> ret = new HashMap<>();
+
+        Date lastUpdated = daoMgr.getXXUgsyncAuditInfo().getUGSyncLastUpdatedTime();
+
+        ret.put("SyncTime", lastUpdated != null ? lastUpdated.getTime() : 0L);
 
         return ret;
     }

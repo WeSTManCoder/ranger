@@ -28,15 +28,16 @@ import org.apache.hadoop.hdfs.server.namenode.snapshot.Snapshot;
 import org.apache.hadoop.security.AccessControlException;
 import org.apache.hadoop.security.UserGroupInformation;
 import org.apache.ranger.authorization.hadoop.RangerHdfsAuthorizer;
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.OutputStreamWriter;
+import java.lang.reflect.Field;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 
@@ -46,16 +47,18 @@ import static org.mockito.Mockito.when;
  * Direct tests for the {@link RangerHdfsAuthorizer} without going through the HDFS layer.
  */
 public class RangerHdfsAuthorizerTest {
-    private static final int          SNAPSHOT_ID   = Snapshot.CURRENT_STATE_ID;
-    private static final String       FILE_OWNER    = "fileOwner";
-    private static final String       FILE_GROUP    = "superGroup";
-    private static final FsPermission READ_ONLY     = new FsPermission(FsAction.READ, FsAction.NONE, FsAction.NONE);
-    private static final FsPermission EXEC_BY_OWNER = new FsPermission(FsAction.EXECUTE, FsAction.NONE, FsAction.NONE);
+    private static final int          SNAPSHOT_ID           = Snapshot.CURRENT_STATE_ID;
+    private static final String       FILE_OWNER            = "fileOwner";
+    private static final String       FILE_GROUP            = "superGroup";
+    private static final String       OPERATION_NAME_DELETE = "delete";
+    private static final String       OPERATION_NAME_RENAME = "rename";
+    private static final FsPermission READ_ONLY             = new FsPermission(FsAction.READ, FsAction.NONE, FsAction.NONE);
+    private static final FsPermission EXEC_BY_OWNER         = new FsPermission(FsAction.EXECUTE, FsAction.NONE, FsAction.NONE);
 
     private static RangerHdfsAuthorizer  authorizer;
     private static AccessControlEnforcer rangerControlEnforcer;
 
-    @BeforeClass
+    @BeforeAll
     public static void setup() {
         try {
             File file = File.createTempFile("hdfs-version-site", ".xml");
@@ -94,24 +97,24 @@ public class RangerHdfsAuthorizerTest {
 
             authorizer.start();
         } catch (Exception exception) {
-            Assert.fail("Cannot create hdfs-version-site file:[" + exception.getMessage() + "]");
+            Assertions.fail("Cannot create hdfs-version-site file:[" + exception.getMessage() + "]");
         }
 
         AccessControlEnforcer accessControlEnforcer = null;
 
         rangerControlEnforcer = authorizer.getExternalAccessControlEnforcer(accessControlEnforcer);
 
-        Assert.assertNotNull("rangerControlEnforcer should not be null", rangerControlEnforcer);
+        Assertions.assertNotNull(rangerControlEnforcer, "rangerControlEnforcer should not be null");
     }
 
-    @AfterClass
+    @AfterAll
     public static void teardown() {
         authorizer.stop();
     }
 
     @Test
     public void testAccessControlEnforcer() {
-        Assert.assertNotNull("rangerControlEnforcer", rangerControlEnforcer);
+        Assertions.assertNotNull(rangerControlEnforcer, "rangerControlEnforcer");
     }
 
     @Test
@@ -192,6 +195,62 @@ public class RangerHdfsAuthorizerTest {
         readFailWithPath("/tmp/tmpdir5/t/data-file.txt");
     }
 
+    @Test
+    public void testOperationOptimizerRenameDirectorySourceEvaluated() throws Exception {
+        runWithAuthzOptimizationEnabled(true, () -> {
+            AccessControlEnforcer enforcer = authorizer.getExternalAccessControlEnforcer(null);
+            INode[]               inodes   = createPath("/tmp/srcdir", false, true);
+
+            checkPermission(enforcer, "bob", inodes, "/tmp/srcdir", null, null, null, null, false, OPERATION_NAME_RENAME);
+
+            Assertions.assertThrows(AccessControlException.class, () ->
+                    checkPermission(enforcer, "bob", inodes, "/tmp/srcdir", null, FsAction.WRITE, null, FsAction.ALL, true, OPERATION_NAME_RENAME));
+
+            // mv of a directory: no subAccess
+            Assertions.assertThrows(AccessControlException.class, () ->
+                    checkPermission(authorizer.getExternalAccessControlEnforcer(null), "bob", inodes, "/tmp/srcdir", null, FsAction.WRITE, null, null, false, OPERATION_NAME_RENAME));
+
+            checkPermission(authorizer.getExternalAccessControlEnforcer(null), "bob", createPath("/tmp/tmpdir2/srcdir", false, true), "/tmp/tmpdir2/srcdir", null, FsAction.WRITE, null, null, false, OPERATION_NAME_RENAME);
+        });
+
+        runWithAuthzOptimizationEnabled(false, () -> {
+            Assertions.assertThrows(AccessControlException.class, () ->
+                    checkPermission(authorizer.getExternalAccessControlEnforcer(null), "bob", createPath("/tmp/srcdir", false, true), "/tmp/srcdir", null, FsAction.WRITE, null, FsAction.ALL, true, OPERATION_NAME_RENAME));
+        });
+    }
+
+    @Test
+    public void testOperationOptimizerRenameFileUnchanged() throws Exception {
+        runWithAuthzOptimizationEnabled(true, () -> {
+            AccessControlEnforcer enforcer = authorizer.getExternalAccessControlEnforcer(null);
+
+            checkPermission(enforcer, "bob", createPath("/tmp/tmpdir2/data-file3", true, true), "/tmp/tmpdir2/data-file3", null, null, null, null, false, OPERATION_NAME_RENAME);
+
+            Assertions.assertThrows(AccessControlException.class, () ->
+                    checkPermission(authorizer.getExternalAccessControlEnforcer(null), "bob", createPath("/tmp/data-file3", true, true), "/tmp/data-file3", null, null, null, null, false, OPERATION_NAME_RENAME));
+            Assertions.assertThrows(AccessControlException.class, () ->
+                    checkPermission(authorizer.getExternalAccessControlEnforcer(null), "bob", createPath("/tmp/data-file3", true, true), "/tmp/data-file3", null, FsAction.WRITE, null, null, true, OPERATION_NAME_RENAME));
+        });
+
+        runWithAuthzOptimizationEnabled(false, () -> {
+            Assertions.assertThrows(AccessControlException.class, () ->
+                    checkPermission(authorizer.getExternalAccessControlEnforcer(null), "bob", createPath("/tmp/data-file3", true, true), "/tmp/data-file3", null, FsAction.WRITE, null, null, true, OPERATION_NAME_RENAME));
+        });
+    }
+
+    @Test
+    public void testOperationOptimizerDeleteRegression() throws Exception {
+        runWithAuthzOptimizationEnabled(true, () -> {
+            AccessControlEnforcer enforcer = authorizer.getExternalAccessControlEnforcer(null);
+            INode[]               inodes   = createPath("/tmp/srcdir", false, true);
+
+            checkPermission(enforcer, "bob", inodes, "/tmp/srcdir", null, null, null, null, false, OPERATION_NAME_DELETE);
+
+            Assertions.assertThrows(AccessControlException.class, () ->
+                    checkPermission(enforcer, "bob", inodes, "/tmp/srcdir", null, FsAction.WRITE, null, FsAction.ALL, true, OPERATION_NAME_DELETE));
+        });
+    }
+
     private void readFailWithPath(String path) {
         final TestFileSystem fs = new TestFileSystem(path);
         fs.setFilePermission(READ_ONLY);
@@ -238,6 +297,79 @@ public class RangerHdfsAuthorizerTest {
         when(mock.toString()).thenReturn(name);
 
         return mock;
+    }
+
+    private static INode[] createPath(String path, boolean file, boolean exists) {
+        String[] segments = path.split("/");
+        INode[]  ret      = new INode[segments.length];
+
+        for (int i = 0; i < segments.length; i++) {
+            boolean isLast = i == segments.length - 1;
+
+            ret[i] = isLast && !exists ? null : createNode(segments, i, FILE_OWNER, FILE_GROUP, isLast && file);
+        }
+
+        return ret;
+    }
+
+    private static void runWithAuthzOptimizationEnabled(boolean enabled, ThrowingRunnable runnable) throws Exception {
+        boolean previous = setAuthzOptimizationEnabled(enabled);
+
+        try {
+            runnable.run();
+        } finally {
+            setAuthzOptimizationEnabled(previous);
+        }
+    }
+
+    private static boolean setAuthzOptimizationEnabled(boolean enabled) throws ReflectiveOperationException {
+        Field   pluginField = RangerHdfsAuthorizer.class.getDeclaredField("rangerPlugin");
+        Object  plugin;
+        Field   flagField;
+        boolean previous;
+
+        pluginField.setAccessible(true);
+        plugin    = pluginField.get(authorizer);
+        flagField = plugin.getClass().getDeclaredField("authzOptimizationEnabled");
+        flagField.setAccessible(true);
+        previous = flagField.getBoolean(plugin);
+        flagField.setBoolean(plugin, enabled);
+
+        return previous;
+    }
+
+    private static void checkPermission(AccessControlEnforcer enforcer, String userName, INode[] inodes, String path, FsAction ancestorAccess, FsAction parentAccess, FsAction access, FsAction subAccess, boolean ignoreEmptyDir, String operationName) throws AccessControlException {
+        INodeAttributes[] attrs = new INodeAttributes[inodes.length];
+
+        for (int i = 0; i < inodes.length; i++) {
+            attrs[i] = inodes[i];
+        }
+
+        INodeAttributeProvider.AuthorizationContext.Builder builder =
+                new INodeAttributeProvider.AuthorizationContext.Builder()
+                        .fsOwner(FILE_OWNER)
+                        .supergroup(FILE_GROUP)
+                        .callerUgi(UserGroupInformation.createUserForTesting(userName, new String[0]))
+                        .inodeAttrs(attrs)
+                        .inodes(inodes)
+                        .pathByNameArr(new byte[0][0])
+                        .snapshotId(SNAPSHOT_ID)
+                        .path(path)
+                        .ancestorIndex(inodes.length - 2)
+                        .doCheckOwner(false)
+                        .ancestorAccess(ancestorAccess)
+                        .parentAccess(parentAccess)
+                        .access(access)
+                        .subAccess(subAccess)
+                        .ignoreEmptyDir(ignoreEmptyDir)
+                        .operationName(operationName)
+                        .callerContext(null);
+
+        enforcer.checkPermissionWithContext(new INodeAttributeProvider.AuthorizationContext(builder));
+    }
+
+    private interface ThrowingRunnable {
+        void run() throws Exception;
     }
 
     static class TestFileSystem {
@@ -342,9 +474,9 @@ public class RangerHdfsAuthorizerTest {
             try {
                 checkAccess(access, userName, groups);
 
-                Assert.fail("Access should be blocked for " + path + " access=" + access + " for user=" + userName + " groups=" + Arrays.asList(groups));
+                Assertions.fail("Access should be blocked for " + path + " access=" + access + " for user=" + userName + " groups=" + Arrays.asList(groups));
             } catch (AccessControlException ace) {
-                Assert.assertNotNull(ace);
+                Assertions.assertNotNull(ace);
             }
         }
 
@@ -356,9 +488,9 @@ public class RangerHdfsAuthorizerTest {
             try {
                 checkDirAccess(access, userName, groups);
 
-                Assert.fail("Access should be blocked for parent directory of " + path + " access=" + access + " for user=" + userName + " groups=" + Arrays.asList(groups));
+                Assertions.fail("Access should be blocked for parent directory of " + path + " access=" + access + " for user=" + userName + " groups=" + Arrays.asList(groups));
             } catch (AccessControlException ace) {
-                Assert.assertNotNull(ace);
+                Assertions.assertNotNull(ace);
             }
         }
     }

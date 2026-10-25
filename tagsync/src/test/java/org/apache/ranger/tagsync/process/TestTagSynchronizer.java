@@ -19,19 +19,19 @@
 
 package org.apache.ranger.tagsync.process;
 
-import org.junit.AfterClass;
-import org.junit.Assert;
-import org.junit.BeforeClass;
-import org.junit.Test;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Test;
 
 import java.io.BufferedWriter;
 import java.io.OutputStreamWriter;
 import java.util.Properties;
 
-public class TestTagSynchronizer {
+class TestTagSynchronizer {
     private static TagSynchronizer tagSynchronizer;
 
-    @BeforeClass
+    @BeforeAll
     public static void setUpBeforeClass() throws Exception {
         System.out.println("setUpBeforeClass() called");
 
@@ -45,13 +45,13 @@ public class TestTagSynchronizer {
         tagSynchronizer = new TagSynchronizer(props);
     }
 
-    @AfterClass
+    @AfterAll
     public static void tearDownAfterClass() throws Exception {
         System.out.println("tearDownAfterClass() called");
     }
 
     @Test
-    public void testTagSynchronizer() {
+    void testTagSynchronizer() {
         System.out.println("testTagSynchronizer() called");
 
         boolean initDone = tagSynchronizer.initialize();
@@ -64,6 +64,6 @@ public class TestTagSynchronizer {
 
         System.out.println("Exiting test");
 
-        Assert.assertTrue(initDone);
+        Assertions.assertTrue(initDone);
     }
 }

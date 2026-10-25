@@ -62,6 +62,8 @@ import org.apache.ranger.plugin.util.GrantRevokeRequest;
 import org.apache.ranger.plugin.util.GrantRevokeRoleRequest;
 import org.apache.ranger.plugin.util.PerfDataRecorder;
 import org.apache.ranger.plugin.util.PolicyRefresher;
+import org.apache.ranger.plugin.util.RangerAccessRequestUtil;
+import org.apache.ranger.plugin.util.RangerBatchEvalContext;
 import org.apache.ranger.plugin.util.RangerPolicyDeltaUtil;
 import org.apache.ranger.plugin.util.RangerRoles;
 import org.apache.ranger.plugin.util.RangerRolesUtil;
@@ -86,6 +88,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Supplier;
 
 public class RangerBasePlugin {
     private static final Logger LOG = LoggerFactory.getLogger(RangerBasePlugin.class);
@@ -302,6 +305,10 @@ public class RangerBasePlugin {
         return baseACLs;
     }
 
+    public void registerTokenSupplier(Supplier<String> tokenSupplier) {
+        pluginContext.registerTokenSupplier(tokenSupplier);
+    }
+
     public String getServiceType() {
         return pluginConfig.getServiceType();
     }
@@ -399,12 +406,7 @@ public class RangerBasePlugin {
         AuditProviderFactory providerFactory = AuditProviderFactory.getInstance();
 
         if (!providerFactory.isInitDone()) {
-            if (pluginConfig.getProperties() != null) {
-                providerFactory.init(pluginConfig.getProperties(), getAppId());
-            } else {
-                LOG.error("Audit subsystem is not initialized correctly. Please check audit configuration. ");
-                LOG.error("No authorization audits will be generated. ");
-            }
+            providerFactory.init(pluginConfig.getProperties(), getAppId());
         }
 
         if (!pluginConfig.getPolicyEngineOptions().disablePolicyRefresher) {
@@ -712,11 +714,27 @@ public class RangerBasePlugin {
             refreshPoliciesAndTags();
         }
 
-        Collection<RangerAccessResult> ret          = null;
-        RangerPolicyEngine             policyEngine = this.policyEngine;
+        Collection<RangerAccessResult> ret              = null;
+        RangerPolicyEngine             policyEngine     = this.policyEngine;
+        RangerBatchEvalContext         batchEvalContext = null;
 
         if (policyEngine != null) {
-            ret = policyEngine.evaluatePolicies(requests, RangerPolicy.POLICY_TYPE_ACCESS, null);
+            if (CollectionUtils.isNotEmpty(requests)) {
+                batchEvalContext = new RangerBatchEvalContext();
+
+                for (RangerAccessRequest request : requests) {
+                    if (request == null) {
+                        continue;
+                    }
+                    RangerAccessRequestUtil.setBatchEvalContext(request.getContext(), batchEvalContext);
+                }
+            }
+
+            try {
+                ret = policyEngine.evaluatePolicies(requests, RangerPolicy.POLICY_TYPE_ACCESS, null);
+            } finally {
+                clearBatchEvalContext(requests, batchEvalContext);
+            }
         }
 
         if (CollectionUtils.isNotEmpty(ret)) {
@@ -750,6 +768,18 @@ public class RangerBasePlugin {
         }
 
         return ret;
+    }
+
+    private static void clearBatchEvalContext(Collection<RangerAccessRequest> requests, RangerBatchEvalContext batchEvalContext) {
+        if (batchEvalContext == null || CollectionUtils.isEmpty(requests)) {
+            return;
+        }
+
+        for (RangerAccessRequest request : requests) {
+            if (request != null) {
+                RangerAccessRequestUtil.removeBatchEvalContext(request.getContext());
+            }
+        }
     }
 
     public RangerAccessResult evalDataMaskPolicies(RangerAccessRequest request, RangerAccessResultProcessor resultProcessor) {
@@ -1392,6 +1422,10 @@ public class RangerBasePlugin {
                 result.setMaskedValue(chainedResult.getMaskedValue());
             } else if (policyType == RangerPolicy.POLICY_TYPE_ROWFILTER) {
                 result.setFilterExpr(chainedResult.getFilterExpr());
+            }
+
+            if (result.getIsAllowed()) {
+                result.setConstraints(chainedResult.getConstraints());
             }
         }
 

@@ -17,21 +17,21 @@
  * under the License.
  */
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import { Table, Button, Form } from "react-bootstrap";
 import { FieldArray } from "react-final-form-arrays";
 import { Col } from "react-bootstrap";
-import { Field } from "react-final-form";
+import { Field, useForm } from "react-final-form";
 import AsyncSelect from "react-select/async";
 import {
   find,
-  groupBy,
   isEmpty,
   isArray,
   map,
   filter,
   some,
-  isEqual
+  isEqual,
+  sortBy
 } from "lodash";
 import { toast } from "react-toastify";
 import Editable from "Components/Editable";
@@ -42,9 +42,19 @@ import {
   dragEnter,
   drop,
   dragOver,
-  policyConditionUpdatedJSON
+  getPolicyConditionDisplayLbl,
+  safeJsonParse
 } from "Utils/XAUtils";
-import { selectInputCustomStyles } from "Components/CommonComponents";
+import {
+  selectInputCustomStyles,
+  ConfirmationClearIndicator
+} from "Components/CommonComponents";
+import PolicyConditionsComp from "./PolicyConditionsComp";
+import {
+  getSelectedAccessTypesForRow,
+  getCleanConditions
+} from "Utils/policyConditionUtils";
+import { usePolicyPermissionConditionContext } from "Hooks/usePolicyPermissionConditionContext";
 
 const noneOptions = {
   label: "None",
@@ -72,11 +82,14 @@ export default function PolicyPermissionItem(props) {
   const [roleLoading, setRoleLoading] = useState(false);
   const [groupLoading, setGroupLoading] = useState(false);
   const [userLoading, setUserLoading] = useState(false);
+  const [activeConditionRow, setActiveConditionRow] = useState(null);
 
   const permList = ["Select Roles", "Select Groups", "Select Users"];
 
+  const form = useForm();
+
   if (serviceCompDetails?.policyConditions?.length > 0) {
-    permList.push("Policy Conditions");
+    permList.push("Rule Conditions");
   }
   permList.push("Permissions");
   if (
@@ -100,20 +113,29 @@ export default function PolicyPermissionItem(props) {
 
   const tableHeader = () => {
     return permList.map((data) => {
-      return <th key={data}>{data}</th>;
+      return (
+        <th
+          key={data}
+          style={data === "Delegate Admin" ? { width: "100px" } : {}}
+        >
+          {data}
+        </th>
+      );
     });
   };
 
-  const grpResourcesKeys = useMemo(() => {
-    const { resources = [] } = serviceCompDetails;
-    const grpResources = groupBy(resources, "level");
-    let grpResourcesKeys = [];
-    for (const resourceKey in grpResources) {
-      grpResourcesKeys.push(+resourceKey);
-    }
-    grpResourcesKeys = grpResourcesKeys.sort();
-    return grpResourcesKeys;
-  }, []);
+  const {
+    conditionDefVal,
+    actionReqsMap,
+    leafResourceTypes,
+    grpResourcesKeys
+  } = usePolicyPermissionConditionContext({
+    serviceCompDetails,
+    formValues,
+    attrName,
+    form,
+    enableResourcePruneDefer: true
+  });
 
   const getAccessTypeOptions = () => {
     let srcOp = [],
@@ -184,10 +206,10 @@ export default function PolicyPermissionItem(props) {
         }
       }
     }
-    return srcOp.map(({ label, name: value }) => ({
-      label,
-      value
-    }));
+    return sortBy(
+      srcOp.map(({ label, name: value }) => ({ label, value })),
+      serviceCompDetails?.name == "tag" ? "value" : "label"
+    );
   };
 
   const getMaskingAccessTypeOptions = (index) => {
@@ -244,10 +266,10 @@ export default function PolicyPermissionItem(props) {
       if ((users || grps || roles) && !accTypes) {
         if (delegateAdmin !== undefined && delegateAdmin === false) {
           error =
-            "Please select permision item for selected users/groups/roles";
+            "Please select permission item for selected users/groups/roles";
         } else if (delegateAdmin == undefined) {
           error =
-            "Please select permision item for selected users/groups/roles";
+            "Please select permission item for selected users/groups/roles";
         }
       }
       if (accTypes && !users && !grps && !roles) {
@@ -263,22 +285,15 @@ export default function PolicyPermissionItem(props) {
         error = "Please select user/group/role for the selected delegate Admin";
       }
       if (policyConditionVal) {
-        for (const key in policyConditionVal) {
-          if (
-            policyConditionVal[key] == null ||
-            policyConditionVal[key] == ""
-          ) {
-            delete policyConditionVal[key];
-          }
-        }
+        const newConditions = getCleanConditions(policyConditionVal);
         if (
-          Object.keys(policyConditionVal).length != 0 &&
+          Object.keys(newConditions).length != 0 &&
           !users &&
           !grps &&
           !roles
         ) {
           error =
-            "Please select user/group/role for the entered policy condition";
+            "Please select user/group/role for the entered Rule Condition";
         }
       }
       return error;
@@ -289,7 +304,6 @@ export default function PolicyPermissionItem(props) {
     ...selectInputCustomStyles,
     control: (base) => ({
       ...base,
-      width: 200,
       whiteSpace: "nowrap"
     })
   };
@@ -318,10 +332,54 @@ export default function PolicyPermissionItem(props) {
     });
   };
 
+  const ruleConditionDisplayValue = (value) => {
+    const selectVal = value;
+    let ipRangVal, uiHintVal;
+    if (selectVal) {
+      return Object.keys(selectVal).map((property) => {
+        let conditionObj = find(
+          serviceCompDetails.policyConditions,
+          function (m) {
+            if (m.name == property) {
+              return m;
+            }
+          }
+        );
+        if (conditionObj?.uiHint && conditionObj?.uiHint != "") {
+          uiHintVal = safeJsonParse(conditionObj.uiHint, {});
+        }
+        if (isArray(selectVal[property])) {
+          ipRangVal = (selectVal[property] || [])
+            .map((m) =>
+              typeof m === "object" && m?.value != null ? m.value : m
+            )
+            .join(", ");
+        }
+        return (
+          <div key={property}>
+            <span
+              className={`${
+                uiHintVal?.isMultiline
+                  ? "editable-label rule-condition-wrapper"
+                  : "badge bg-dark rule-condition-wrapper"
+              }`}
+            >
+              <span className="line-clamp line-clamp-5 text-start">
+                {`${getPolicyConditionDisplayLbl(conditionObj.label)}: ${
+                  isArray(selectVal[property]) ? ipRangVal : selectVal[property]
+                }`}
+              </span>
+            </span>
+          </div>
+        );
+      });
+    }
+  };
+
   return (
     <div>
       <Col sm="12">
-        <div className="table-responsive">
+        <div className="table-fixed">
           <Table
             bordered
             className="policy-permission-table"
@@ -330,7 +388,7 @@ export default function PolicyPermissionItem(props) {
             <thead className="thead-light">
               <tr>
                 {tableHeader()}
-                <th></th>
+                <th width="64px"></th>
               </tr>
             </thead>
             <tbody className="drag-drop-wrap">
@@ -354,7 +412,7 @@ export default function PolicyPermissionItem(props) {
                                 className="form-control"
                                 name={`${name}.roles`}
                                 render={({ input }) => (
-                                  <div className="d-flex">
+                                  <div className="permission-item">
                                     <AsyncSelect
                                       {...input}
                                       menuPortalTarget={document.body}
@@ -371,6 +429,13 @@ export default function PolicyPermissionItem(props) {
                                       styles={customStyles}
                                       cacheOptions
                                       isMulti
+                                      tabSelectsValue={false}
+                                      placeholder="Select Roles"
+                                      clearConfirmMessage="Roles"
+                                      components={{
+                                        ClearIndicator:
+                                          ConfirmationClearIndicator
+                                      }}
                                     />
                                   </div>
                                 )}
@@ -385,7 +450,7 @@ export default function PolicyPermissionItem(props) {
                                 className="form-control"
                                 name={`${name}.groups`}
                                 render={({ input }) => (
-                                  <div>
+                                  <div className="permission-item">
                                     <AsyncSelect
                                       {...input}
                                       menuPortalTarget={document.body}
@@ -402,6 +467,13 @@ export default function PolicyPermissionItem(props) {
                                       styles={customStyles}
                                       cacheOptions
                                       isMulti
+                                      tabSelectsValue={false}
+                                      placeholder="Select Groups"
+                                      clearConfirmMessage="Groups"
+                                      components={{
+                                        ClearIndicator:
+                                          ConfirmationClearIndicator
+                                      }}
                                     />
                                   </div>
                                 )}
@@ -416,7 +488,7 @@ export default function PolicyPermissionItem(props) {
                                 className="form-control"
                                 name={`${name}.users`}
                                 render={({ input }) => (
-                                  <div>
+                                  <div className="permission-item">
                                     <AsyncSelect
                                       {...input}
                                       menuPortalTarget={document.body}
@@ -433,6 +505,13 @@ export default function PolicyPermissionItem(props) {
                                       styles={customStyles}
                                       cacheOptions
                                       isMulti
+                                      tabSelectsValue={false}
+                                      placeholder="Select Users"
+                                      clearConfirmMessage="Users"
+                                      components={{
+                                        ClearIndicator:
+                                          ConfirmationClearIndicator
+                                      }}
                                     />
                                   </div>
                                 )}
@@ -440,7 +519,7 @@ export default function PolicyPermissionItem(props) {
                             </td>
                           );
                         }
-                        if (colName == "Policy Conditions") {
+                        if (colName == "Rule Conditions") {
                           return (
                             serviceCompDetails?.policyConditions?.length >
                               0 && (
@@ -454,19 +533,95 @@ export default function PolicyPermissionItem(props) {
                                       index
                                     )
                                   }
-                                  render={({ input }) => (
-                                    <div className="table-editable">
-                                      <Editable
-                                        {...input}
-                                        placement="auto"
-                                        type="custom"
-                                        conditionDefVal={policyConditionUpdatedJSON(
-                                          serviceCompDetails.policyConditions
+                                  render={({ input }) => {
+                                    const showConditionsModal =
+                                      activeConditionRow === name;
+                                    const hasValue =
+                                      Object.keys(
+                                        getCleanConditions(input?.value || {})
+                                      ).length !== 0;
+                                    return (
+                                      <>
+                                        {showConditionsModal && (
+                                          <PolicyConditionsComp
+                                            // Visibility & Control
+                                            showModal={true}
+                                            modalHeader="Rule Conditions"
+                                            handleCloseModal={() =>
+                                              setActiveConditionRow(null)
+                                            }
+                                            // Data & Value Binding
+                                            scope="policyItem"
+                                            inputVal={input}
+                                            policyConditionDetails={
+                                              conditionDefVal
+                                            }
+                                            // Service & Actions Metadata
+                                            servicedefName={
+                                              serviceCompDetails?.name
+                                            }
+                                            serviceDefOptions={
+                                              serviceCompDetails?.options
+                                            }
+                                            actionReqsMap={actionReqsMap}
+                                            // Filter Context Evaluation
+                                            actionFilterContext={{
+                                              leafResourceTypes,
+                                              accessTypeDefs:
+                                                serviceCompDetails?.accessTypes,
+                                              selectedAccessTypes:
+                                                getSelectedAccessTypesForRow(
+                                                  formValues,
+                                                  attrName,
+                                                  index
+                                                )
+                                            }}
+                                          />
                                         )}
-                                        selectProps={{ isMulti: true }}
-                                      />
-                                    </div>
-                                  )}
+                                        <div className="table-editable">
+                                          {hasValue ? (
+                                            <h6>
+                                              {ruleConditionDisplayValue(
+                                                input.value
+                                              )}
+                                              <Button
+                                                className="mg-10 mx-auto d-block btn-mini"
+                                                variant="outline-dark"
+                                                size="sm"
+                                                type="button"
+                                                onClick={() =>
+                                                  setActiveConditionRow(name)
+                                                }
+                                                data-js="customPolicyConditions"
+                                                data-cy="customPolicyConditions"
+                                              >
+                                                <i className="fa-fw fa fa-pencil"></i>
+                                              </Button>
+                                            </h6>
+                                          ) : (
+                                            <div className="text-center">
+                                              <span className="editable-add-text">
+                                                Add Conditions
+                                              </span>
+                                              <Button
+                                                className="mg-10 mx-auto d-block btn-mini"
+                                                variant="outline-dark"
+                                                size="sm"
+                                                type="button"
+                                                onClick={() =>
+                                                  setActiveConditionRow(name)
+                                                }
+                                                data-js="customPolicyConditions"
+                                                data-cy="customPolicyConditions"
+                                              >
+                                                <i className="fa-fw fa fa-plus"></i>
+                                              </Button>
+                                            </div>
+                                          )}
+                                        </div>
+                                      </>
+                                    );
+                                  }}
                                 />
                               </td>
                             )
@@ -542,6 +697,7 @@ export default function PolicyPermissionItem(props) {
                                           options={accessTypeOptions}
                                           showSelectAll={true}
                                           selectAllLabel="Select All"
+                                          popOverheader="Add/Edit Permissions"
                                         />
                                       </div>
                                     );
@@ -577,6 +733,7 @@ export default function PolicyPermissionItem(props) {
                                             fields?.value[index]?.accesses
                                               ?.tableList
                                           }
+                                          popOverheader="Select Masking Option"
                                         />
                                         {fields?.value[index]?.dataMaskInfo
                                           ?.label == "Custom" && (
@@ -604,7 +761,7 @@ export default function PolicyPermissionItem(props) {
                                         )}
                                       </div>
                                     ) : (
-                                      <div>
+                                      <div className="text-center">
                                         <span className="editable-add-text text-secondary">
                                           Select Masking Option
                                         </span>
@@ -644,6 +801,7 @@ export default function PolicyPermissionItem(props) {
                                         options={getMaskingAccessTypeOptions()}
                                         showSelectAll={false}
                                         selectAllLabel="Select All"
+                                        popOverheader="Select Masking Option"
                                       />
                                       {fields?.value[index]?.dataMaskInfo
                                         ?.label == "Custom" && (
@@ -688,6 +846,7 @@ export default function PolicyPermissionItem(props) {
                                       {...input}
                                       placement="auto"
                                       type="input"
+                                      popOverheader="Enter Filter Expression"
                                     />
                                     {meta.touched && meta.error && (
                                       <span>{meta.error}</span>
@@ -706,6 +865,7 @@ export default function PolicyPermissionItem(props) {
                             <td
                               key={`${name}-${index}`}
                               className="text-center align-middle"
+                              width="64px"
                             >
                               <div key={`${name}-${index}`}>
                                 <Field
@@ -733,7 +893,7 @@ export default function PolicyPermissionItem(props) {
                         }
                         return <td key={colName}>{colName}</td>;
                       })}
-                      <td className="align-middle">
+                      <td className="align-middle" width="64px">
                         <Button
                           variant="danger"
                           size="sm"

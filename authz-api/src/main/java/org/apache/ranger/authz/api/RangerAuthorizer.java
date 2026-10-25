@@ -24,13 +24,19 @@ import org.apache.ranger.authz.model.RangerAccessContext;
 import org.apache.ranger.authz.model.RangerAccessInfo;
 import org.apache.ranger.authz.model.RangerAuthzRequest;
 import org.apache.ranger.authz.model.RangerAuthzResult;
+import org.apache.ranger.authz.model.RangerAuthzResult.AccessDecision;
+import org.apache.ranger.authz.model.RangerFilterResourcesRequest;
+import org.apache.ranger.authz.model.RangerFilterResourcesResult;
 import org.apache.ranger.authz.model.RangerMultiAuthzRequest;
 import org.apache.ranger.authz.model.RangerMultiAuthzResult;
 import org.apache.ranger.authz.model.RangerResourceInfo;
 import org.apache.ranger.authz.model.RangerResourcePermissions;
+import org.apache.ranger.authz.model.RangerResourcePermissionsRequest;
 import org.apache.ranger.authz.model.RangerUserInfo;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Properties;
 
 import static org.apache.ranger.authz.api.RangerAuthzApiErrorCode.INVALID_REQUEST_ACCESS_CONTEXT_MISSING;
@@ -40,6 +46,7 @@ import static org.apache.ranger.authz.api.RangerAuthzApiErrorCode.INVALID_REQUES
 import static org.apache.ranger.authz.api.RangerAuthzApiErrorCode.INVALID_REQUEST_RESOURCE_INFO_MISSING;
 import static org.apache.ranger.authz.api.RangerAuthzApiErrorCode.INVALID_REQUEST_RESOURCE_NAME_MISSING;
 import static org.apache.ranger.authz.api.RangerAuthzApiErrorCode.INVALID_REQUEST_USER_INFO_MISSING;
+import static org.apache.ranger.authz.api.RangerAuthzApiErrorCode.INVALID_RESOURCE_EMPTY_VALUE;
 
 public abstract class RangerAuthorizer {
     protected final Properties properties;
@@ -56,7 +63,27 @@ public abstract class RangerAuthorizer {
 
     public abstract RangerMultiAuthzResult authorize(RangerMultiAuthzRequest request) throws RangerAuthzException;
 
-    public abstract RangerResourcePermissions getResourcePermissions(RangerResourceInfo resource, RangerAccessContext context) throws RangerAuthzException;
+    public abstract RangerResourcePermissions getResourcePermissions(RangerResourcePermissionsRequest request) throws RangerAuthzException;
+
+    // default implementation
+    public RangerFilterResourcesResult filterResources(RangerFilterResourcesRequest request) throws RangerAuthzException {
+        validateRequest(request);
+
+        String                   requestId        = request.getRequestId();
+        List<RangerResourceInfo> allowedResources = new ArrayList<>();
+
+        for (RangerResourceInfo resource : request.getResources()) {
+            RangerAccessInfo   access = new RangerAccessInfo(resource, request.getAction(), request.getPermissions());
+            RangerAuthzRequest req    = new RangerAuthzRequest(requestId, request.getUser(), access, request.getContext());
+            RangerAuthzResult  res    = authorize(req);
+
+            if (res != null && AccessDecision.ALLOW.equals(res.getDecision())) {
+                allowedResources.add(resource);
+            }
+        }
+
+        return new RangerFilterResourcesResult(requestId, allowedResources);
+    }
 
     protected void validateRequest(RangerAuthzRequest request) throws RangerAuthzException {
         validateUserInfo(request.getUser());
@@ -73,6 +100,29 @@ public abstract class RangerAuthorizer {
 
         for (RangerAccessInfo access : request.getAccesses()) {
             validateAccessInfo(access);
+        }
+
+        validateAccessContext(request.getContext());
+    }
+
+    protected void validateRequest(RangerResourcePermissionsRequest request) throws RangerAuthzException {
+        validateResourceInfo(request.getResource());
+        validateAccessContext(request.getContext());
+    }
+
+    protected void validateRequest(RangerFilterResourcesRequest request) throws RangerAuthzException {
+        validateUserInfo(request.getUser());
+
+        if (request.getPermissions() == null || request.getPermissions().isEmpty()) {
+            throw new RangerAuthzException(INVALID_REQUEST_PERMISSIONS_EMPTY);
+        }
+
+        if (request.getResources() == null || request.getResources().isEmpty()) {
+            throw new RangerAuthzException(INVALID_RESOURCE_EMPTY_VALUE);
+        }
+
+        for (RangerResourceInfo resource : request.getResources()) {
+            validateResourceInfo(resource);
         }
 
         validateAccessContext(request.getContext());

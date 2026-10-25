@@ -344,6 +344,7 @@ public class RangerAPIMapping {
         apiAssociatedWithUserAndGroups.add(RangerAPIList.SECURE_GET_X_USER);
         apiAssociatedWithUserAndGroups.add(RangerAPIList.UPDATE_X_AUDIT_MAP);
         apiAssociatedWithUserAndGroups.add(RangerAPIList.UPDATE_X_PERM_MAP);
+        apiAssociatedWithUserAndGroups.add(RangerAPIList.VALIDATE_CONFIG);
 
         apiAssociatedWithUserAndGroups.add(RangerAPIList.CREATE);
         apiAssociatedWithUserAndGroups.add(RangerAPIList.CREATE_DEFAULT_ACCOUNT_USER);
@@ -426,6 +427,12 @@ public class RangerAPIMapping {
         apiAssociatedWithAudit.add(RangerAPIList.GET_AUTH_SESSION);
         apiAssociatedWithAudit.add(RangerAPIList.GET_AUTH_SESSIONS);
 
+        apiAssociatedWithAudit.add(RangerAPIList.GET_LATEST_AUDIT_METRICS);
+        apiAssociatedWithAudit.add(RangerAPIList.GET_AUDIT_METRICS);
+        apiAssociatedWithAudit.add(RangerAPIList.GET_ALL_LATEST_AUDIT_METRICS);
+        apiAssociatedWithAudit.add(RangerAPIList.GET_DAILY_AUDIT_METRICS);
+        apiAssociatedWithAudit.add(RangerAPIList.GET_DAYS_AUDIT_METRICS);
+
         rangerAPIMappingWithUI.put(TAB_AUDIT, apiAssociatedWithAudit);
 
         for (String api : apiAssociatedWithAudit) {
@@ -466,7 +473,6 @@ public class RangerAPIMapping {
         apiAssociatedWithRBPolicies.add(RangerAPIList.LOOKUP_RESOURCE);
         apiAssociatedWithRBPolicies.add(RangerAPIList.UPDATE_SERVICE);
         apiAssociatedWithRBPolicies.add(RangerAPIList.UPDATE_SERVICE_DEF);
-        apiAssociatedWithRBPolicies.add(RangerAPIList.VALIDATE_CONFIG);
 
         apiAssociatedWithRBPolicies.add(RangerAPIList.GET_USER_PROFILE_FOR_USER);
         apiAssociatedWithRBPolicies.add(RangerAPIList.SEARCH_USERS);

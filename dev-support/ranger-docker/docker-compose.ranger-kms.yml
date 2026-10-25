@@ -15,7 +15,8 @@ services:
     volumes:
       - ./dist/keytabs/ranger-kms:/etc/keytabs
       - ./scripts/kdc/krb5.conf:/etc/krb5.conf
-      - ./scripts/hadoop/core-site.xml:/home/ranger/scripts/core-site.xml:ro
+      - ./scripts/kms/core-site.xml:/home/ranger/scripts/core-site.xml:ro
+      - ./scripts/kms/kms-site.xml:/home/ranger/scripts/kms-site.xml:ro
       - ./dist/version:/home/ranger/dist/version:ro
       - ./scripts/kms/ranger-kms-install-${RANGER_DB_TYPE}.properties:/opt/ranger/kms/install.properties
     stdin_open: true
@@ -31,6 +32,10 @@ services:
       - KMS_VERSION
       - RANGER_DB_TYPE
       - KERBEROS_ENABLED
+      - JAVA_OPTS=--add-exports=java.xml.crypto/com.sun.org.apache.xml.internal.security.utils=ALL-UNNAMED
+      - RANGER_KMS_MAX_HEAP
+      - RANGER_JVM_METASPACE
+      - RANGER_JVM_MAX_METASPACE
     command:
       - /home/ranger/scripts/ranger-kms.sh
 

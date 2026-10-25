@@ -16,7 +16,6 @@
  */
 package org.apache.ranger.rest;
 
-import com.sun.jersey.core.header.FormDataContentDisposition;
 import org.apache.ranger.admin.client.datatype.RESTResponse;
 import org.apache.ranger.biz.AssetMgr;
 import org.apache.ranger.biz.RangerBizUtil;
@@ -36,14 +35,17 @@ import org.apache.ranger.db.XXRoleDao;
 import org.apache.ranger.db.XXRoleRefGroupDao;
 import org.apache.ranger.db.XXRoleRefRoleDao;
 import org.apache.ranger.db.XXRoleRefUserDao;
+import org.apache.ranger.db.XXServiceDefDao;
 import org.apache.ranger.entity.XXPortalUser;
 import org.apache.ranger.entity.XXRoleRefGroup;
 import org.apache.ranger.entity.XXRoleRefUser;
 import org.apache.ranger.entity.XXService;
+import org.apache.ranger.entity.XXServiceDef;
 import org.apache.ranger.plugin.model.RangerPolicy;
 import org.apache.ranger.plugin.model.RangerPolicy.RangerPolicyItem;
 import org.apache.ranger.plugin.model.RangerPolicy.RangerPolicyResource;
 import org.apache.ranger.plugin.model.RangerRole;
+import org.apache.ranger.plugin.model.RangerService;
 import org.apache.ranger.plugin.model.validation.RangerRoleValidator;
 import org.apache.ranger.plugin.util.GrantRevokeRoleRequest;
 import org.apache.ranger.plugin.util.RangerRoles;
@@ -53,7 +55,9 @@ import org.apache.ranger.security.context.RangerSecurityContext;
 import org.apache.ranger.service.RangerRoleService;
 import org.apache.ranger.service.XUserService;
 import org.apache.ranger.view.RangerRoleList;
+import org.apache.ranger.view.RoleUsersGroupsRequest;
 import org.apache.ranger.view.VXUser;
+import org.glassfish.jersey.media.multipart.FormDataContentDisposition;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -175,11 +179,12 @@ public class TestRoleREST {
     @Test
     public void test1CreateRole() {
         boolean createNonExistUserGroup = true;
+        boolean isRefTableCleanupRequired = false;
         Mockito.when(validatorFactory.getRangerRoleValidator(roleStore)).thenReturn(Mockito.mock(RangerRoleValidator.class));
         Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(true);
         RangerRole rangerRole = createRole();
         try {
-            Mockito.when(roleStore.createRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroup))).thenReturn(rangerRole);
+            Mockito.when(roleStore.createRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroup), eq(isRefTableCleanupRequired))).thenReturn(rangerRole);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -193,6 +198,7 @@ public class TestRoleREST {
     @Test
     public void test2UpdateRole() {
         Boolean    createNonExistUserGroup = Boolean.TRUE;
+        boolean isRefTableCleanupRequired = true;
         RangerRole rangerRole              = createRole();
         RangerRole rangerRoleOld           = createRoleOld();
         Mockito.when(validatorFactory.getRangerRoleValidator(roleStore)).thenReturn(Mockito.mock(RangerRoleValidator.class));
@@ -204,7 +210,7 @@ public class TestRoleREST {
             throw new RuntimeException(e);
         }
         try {
-            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean())).thenReturn(rangerRole);
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).thenReturn(rangerRole);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -309,6 +315,7 @@ public class TestRoleREST {
         List<String> users      = new ArrayList<>(Arrays.asList("test-role", "admin"));
         List<String> groups     = new ArrayList<>(Arrays.asList("group1", "group2"));
         Boolean      isAdmin    = true;
+        boolean isRefTableCleanupRequired = true;
         Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(true);
         try {
             Mockito.when(roleStore.getRole(Mockito.anyLong())).thenReturn(rangerRole);
@@ -316,14 +323,36 @@ public class TestRoleREST {
             throw new RuntimeException(e);
         }
         try {
-            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean())).then(AdditionalAnswers.returnsFirstArg());
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        RangerRole returnedRole = roleRest.addUsersAndGroups(roleId, users, groups, isAdmin);
+        RangerRole returnedRole = roleRest.addUsersAndGroups(roleId, users, groups, isAdmin, null);
         Assertions.assertNotNull(returnedRole);
         Assertions.assertEquals(returnedRole.getUsers().size(), users.size());
         Assertions.assertEquals(returnedRole.getGroups().size(), groups.size());
+    }
+
+    @Test
+    public void test10aAddUsersAndGroupsJsonBodyOverridesQuery() {
+        RangerRole rangerRole = createRole();
+        boolean isRefTableCleanupRequired = true;
+        RoleUsersGroupsRequest body = new RoleUsersGroupsRequest();
+        body.setUsers(new ArrayList<>(Arrays.asList("body-user")));
+        body.setGroups(new ArrayList<>());
+        body.setIsAdmin(Boolean.FALSE);
+        Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(true);
+        try {
+            Mockito.when(roleStore.getRole(Mockito.anyLong())).thenReturn(rangerRole);
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        List<String> queryUsers = new ArrayList<>(Arrays.asList("query-user"));
+        RangerRole returnedRole = roleRest.addUsersAndGroups(roleId, queryUsers, new ArrayList<>(), Boolean.TRUE, body);
+        Assertions.assertNotNull(returnedRole);
+        Assertions.assertTrue(returnedRole.getUsers().stream().anyMatch(m -> "body-user".equals(m.getName()) && !m.getIsAdmin()));
+        Assertions.assertFalse(returnedRole.getUsers().stream().anyMatch(m -> "query-user".equals(m.getName())));
     }
 
     @Test
@@ -332,6 +361,7 @@ public class TestRoleREST {
         List<String> users            = new ArrayList<>(Arrays.asList("test-role", "admin"));
         List<String> groups           = new ArrayList<>(Arrays.asList("test-group", "admin"));
         List<String> createdRoleUsers = new ArrayList<>();
+        boolean isRefTableCleanupRequired = true;
         for (RangerRole.RoleMember roleMember : rangerRole.getUsers()) {
             createdRoleUsers.add(roleMember.getName());
         }
@@ -346,11 +376,11 @@ public class TestRoleREST {
             throw new RuntimeException(e);
         }
         try {
-            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean())).then(AdditionalAnswers.returnsFirstArg());
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        RangerRole returnedRole = roleRest.removeUsersAndGroups(roleId, users, groups);
+        RangerRole returnedRole = roleRest.removeUsersAndGroups(roleId, users, groups, null);
         Assertions.assertNotNull(returnedRole);
         Assertions.assertEquals(createdRoleUsers, users);
         Assertions.assertEquals(createdRoleGroups, groups);
@@ -361,6 +391,7 @@ public class TestRoleREST {
     @Test
     public void test12RemoveAdminFromUsersAndGroups() {
         RangerRole rangerRole = createRoleWithUsersAndGroups();
+        boolean isRefTableCleanupRequired = true;
         for (RangerRole.RoleMember role : rangerRole.getUsers()) {
             Assertions.assertTrue(role.getIsAdmin());
         }
@@ -384,11 +415,11 @@ public class TestRoleREST {
             throw new RuntimeException(e);
         }
         try {
-            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean())).then(AdditionalAnswers.returnsFirstArg());
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        RangerRole returnedRole = roleRest.removeAdminFromUsersAndGroups(roleId, users, groups);
+        RangerRole returnedRole = roleRest.removeAdminFromUsersAndGroups(roleId, users, groups, null);
         Assertions.assertNotNull(returnedRole);
         Assertions.assertEquals(createdRoleUsers, users);
         Assertions.assertEquals(createdRoleGroups, groups);
@@ -404,10 +435,11 @@ public class TestRoleREST {
     public void test13GrantRole() {
         RangerRole             rangerRole             = createRole();
         String                 serviceName            = "serviceName";
+        boolean isRefTableCleanupRequired = true;
         GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
         Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(true, true, true);
         try {
-            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean())).then(AdditionalAnswers.returnsFirstArg());
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -427,13 +459,14 @@ public class TestRoleREST {
         String                 serviceName            = "serviceName";
         GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
         Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(true, true, true);
+        boolean isRefTableCleanupRequired = true;
         try {
             Mockito.when(roleStore.getRole(Mockito.anyString())).thenReturn(rangerRole, rangerRole, rangerRole, rangerRole);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
         try {
-            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean())).then(AdditionalAnswers.returnsFirstArg());
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -582,6 +615,37 @@ public class TestRoleREST {
     }
 
     @Test
+    public void test6cGetRoleByIdUnauthorized() {
+        Assertions.assertThrows(Throwable.class, () -> {
+            RangerRole rangerRole = createRangerRole("someOtherUser", false);
+            Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(false);
+            Mockito.when(userMgr.getGroupsForUser(Mockito.anyString())).thenReturn(new HashSet<>());
+            try {
+                Mockito.when(roleStore.getRole(Mockito.anyLong())).thenReturn(rangerRole);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            roleRest.getRole(rangerRole.getId());
+            Mockito.verify(restErrorUtil, Mockito.times(1)).createRESTException(Mockito.anyString());
+        });
+    }
+
+    @Test
+    public void test6dGetRoleByIdAllowedForRoleAdminOptionMember() {
+        RangerRole rangerRole = createRole(); // "admin" is an admin-option user member of this role
+        Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(false);
+        Mockito.when(userMgr.getGroupsForUser(Mockito.anyString())).thenReturn(new HashSet<>());
+        try {
+            Mockito.when(roleStore.getRole(Mockito.anyLong())).thenReturn(rangerRole);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        RangerRole returnedRole = roleRest.getRole(rangerRole.getId());
+        Assertions.assertNotNull(returnedRole);
+        Assertions.assertEquals(returnedRole.getId(), rangerRole.getId());
+    }
+
+    @Test
     public void test7bGetAllRoles() {
         Assertions.assertThrows(Throwable.class, () -> {
             SearchFilter searchFilter = new SearchFilter();
@@ -623,6 +687,7 @@ public class TestRoleREST {
         List<String> users              = new ArrayList<>(Arrays.asList("test-role2", "test-role3"));
         List<String> groups             = new ArrayList<>(Arrays.asList("test-group2", "test-group3"));
         Boolean      isAdmin            = Boolean.TRUE;
+        boolean isRefTableCleanupRequired = true;
         Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(true);
         try {
             Mockito.when(roleStore.getRole(Mockito.anyLong())).thenReturn(rangerRole);
@@ -630,11 +695,11 @@ public class TestRoleREST {
             throw new RuntimeException(e);
         }
         try {
-            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean())).then(AdditionalAnswers.returnsFirstArg());
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        RangerRole returnedRole = roleRest.addUsersAndGroups(roleId, users, groups, isAdmin);
+        RangerRole returnedRole = roleRest.addUsersAndGroups(roleId, users, groups, isAdmin, null);
         Assertions.assertNotNull(returnedRole);
         Assertions.assertEquals(returnedRole.getGroups().size(), groups.size() + currentGroupsCount);
     }
@@ -646,7 +711,7 @@ public class TestRoleREST {
             List<String> users   = new ArrayList<>(Arrays.asList("{OWNER}", "test-role3"));
             List<String> groups  = new ArrayList<>(Arrays.asList("test-group2", "test-group3"));
             Boolean      isAdmin = Boolean.TRUE;
-            roleRest.addUsersAndGroups(roleId, users, groups, isAdmin);
+            roleRest.addUsersAndGroups(roleId, users, groups, isAdmin, null);
         });
     }
 
@@ -660,7 +725,7 @@ public class TestRoleREST {
             for (RangerRole.RoleMember roleMember : rangerRole.getUsers()) {
                 createdRoleUsers.add(roleMember.getName());
             }
-            roleRest.removeUsersAndGroups(roleId, users, groups);
+            roleRest.removeUsersAndGroups(roleId, users, groups, null);
         });
     }
 
@@ -677,7 +742,7 @@ public class TestRoleREST {
             for (RangerRole.RoleMember roleMember : rangerRole.getUsers()) {
                 createdRoleUsers.add(roleMember.getName());
             }
-            roleRest.removeAdminFromUsersAndGroups(roleId, users, groups);
+            roleRest.removeAdminFromUsersAndGroups(roleId, users, groups, null);
         });
     }
 
@@ -692,11 +757,99 @@ public class TestRoleREST {
     }
 
     @Test
+    public void test13cGrantRoleForgedGrantorGroupsRejected() {
+        Assertions.assertThrows(Throwable.class, () -> {
+            String serviceName = "serviceName";
+            RangerRole.RoleMember groupMember = new RangerRole.RoleMember("forged-admin-group", true);
+            RangerRole rangerRole = new RangerRole("target-role", "target-role", null, new ArrayList<>(), new ArrayList<>(Collections.singletonList(groupMember)));
+            GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
+            rangerRole.setCreatedByUser("target-role");
+            rangerRole.setId(roleId);
+            grantRevokeRoleRequest.setGrantor(adminLoginID);
+            grantRevokeRoleRequest.setGrantorGroups(new HashSet<>(Collections.singletonList("forged-admin-group")));
+            Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(false);
+            Mockito.when(userMgr.getGroupsForUser(Mockito.anyString())).thenReturn(new HashSet<>());
+            try {
+                Mockito.when(roleStore.getRole(Mockito.anyString())).thenReturn(rangerRole);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            roleRest.grantRole(serviceName, grantRevokeRoleRequest, Mockito.mock(HttpServletRequest.class));
+            Mockito.verify(restErrorUtil, Mockito.times(1)).createRESTException(Mockito.anyString());
+        });
+    }
+
+    @Test
+    public void test13eGrantRoleRealGroupMembershipAllowed() {
+        String serviceName = "serviceName";
+        boolean isRefTableCleanupRequired = true;
+        RangerRole.RoleMember groupMember = new RangerRole.RoleMember("real-admin-group", true);
+        RangerRole rangerRole = new RangerRole("target-role", "target-role", null, new ArrayList<>(), new ArrayList<>(Collections.singletonList(groupMember)));
+        GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
+        rangerRole.setCreatedByUser("target-role");
+        rangerRole.setId(roleId);
+        grantRevokeRoleRequest.setGrantor(adminLoginID);
+        Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(false);
+        Mockito.when(userMgr.getGroupsForUser(adminLoginID)).thenReturn(new HashSet<>(Collections.singletonList("real-admin-group")));
+        try {
+            Mockito.when(roleStore.getRole(Mockito.anyString())).thenReturn(rangerRole);
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        RESTResponse resp = roleRest.grantRole(serviceName, grantRevokeRoleRequest, Mockito.mock(HttpServletRequest.class));
+        Assertions.assertNotNull(resp);
+        Assertions.assertEquals(resp.getStatusCode(), RESTResponse.STATUS_SUCCESS);
+    }
+
+    @Test
+    public void test13fGrantRoleRealGroupMembershipMismatchRejected() {
+        String serviceName = "serviceName";
+        RangerRole.RoleMember groupMember = new RangerRole.RoleMember("real-admin-group", true);
+        RangerRole rangerRole = new RangerRole("target-role", "target-role", null, new ArrayList<>(), new ArrayList<>(Collections.singletonList(groupMember)));
+        GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
+        rangerRole.setCreatedByUser("target-role");
+        rangerRole.setId(roleId);
+        grantRevokeRoleRequest.setGrantor(adminLoginID);
+        Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(false);
+        Mockito.when(userMgr.getGroupsForUser(adminLoginID)).thenReturn(new HashSet<>(Arrays.asList("users", "developers")));
+        try {
+            Mockito.when(roleStore.getRole(Mockito.anyString())).thenReturn(rangerRole);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        boolean denied = false;
+        try {
+            roleRest.grantRole(serviceName, grantRevokeRoleRequest, Mockito.mock(HttpServletRequest.class));
+        } catch (Throwable expected) {
+            denied = true;
+        }
+        Assertions.assertTrue(denied, "expected grantRole to deny access for mismatched real groups");
+        Mockito.verify(userMgr, Mockito.atLeastOnce()).getGroupsForUser(adminLoginID);
+        try {
+            Mockito.verify(roleStore, Mockito.never()).updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), Mockito.anyBoolean());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Test
+    public void test13dGrantRoleBlockedForAuditor() {
+        Assertions.assertThrows(WebApplicationException.class, () -> {
+            String serviceName = "serviceName";
+            GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
+            Mockito.doThrow(new WebApplicationException()).when(bizUtil).blockAuditorRoleUser();
+            roleRest.grantRole(serviceName, grantRevokeRoleRequest, Mockito.mock(HttpServletRequest.class));
+        });
+    }
+
+    @Test
     public void test14bRevokeRole() {
         RangerRole             rangerRole             = createRole();
         String                 serviceName            = "serviceName";
         GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
         grantRevokeRoleRequest.setGrantOption(Boolean.TRUE);
+        boolean isRefTableCleanupRequired = true;
         Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(true, true, true);
         try {
             Mockito.when(roleStore.getRole(Mockito.anyString())).thenReturn(rangerRole, rangerRole, rangerRole, rangerRole);
@@ -704,7 +857,7 @@ public class TestRoleREST {
             throw new RuntimeException(e);
         }
         try {
-            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean())).then(AdditionalAnswers.returnsFirstArg());
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -726,6 +879,96 @@ public class TestRoleREST {
     }
 
     @Test
+    public void test14dRevokeRoleForgedGrantorGroupsRejected() {
+        Assertions.assertThrows(Throwable.class, () -> {
+            String serviceName = "serviceName";
+            RangerRole.RoleMember groupMember = new RangerRole.RoleMember("forged-admin-group", true);
+            RangerRole rangerRole = new RangerRole("target-role", "target-role", null, new ArrayList<>(), new ArrayList<>(Collections.singletonList(groupMember)));
+            GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
+            rangerRole.setCreatedByUser("target-role");
+            rangerRole.setId(roleId);
+            grantRevokeRoleRequest.setGrantor(adminLoginID);
+            grantRevokeRoleRequest.setGrantOption(Boolean.TRUE);
+            grantRevokeRoleRequest.setGrantorGroups(new HashSet<>(Collections.singletonList("forged-admin-group")));
+            Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(false);
+            Mockito.when(userMgr.getGroupsForUser(Mockito.anyString())).thenReturn(new HashSet<>());
+            try {
+                Mockito.when(roleStore.getRole(Mockito.anyString())).thenReturn(rangerRole);
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+            roleRest.revokeRole(serviceName, grantRevokeRoleRequest, Mockito.mock(HttpServletRequest.class));
+            Mockito.verify(restErrorUtil, Mockito.times(1)).createRESTException(Mockito.anyString());
+        });
+    }
+
+    @Test
+    public void test14fRevokeRoleRealGroupMembershipAllowed() {
+        String serviceName = "serviceName";
+        boolean isRefTableCleanupRequired = true;
+        RangerRole.RoleMember groupMember = new RangerRole.RoleMember("real-admin-group", true);
+        RangerRole rangerRole = new RangerRole("target-role", "target-role", null, new ArrayList<>(), new ArrayList<>(Collections.singletonList(groupMember)));
+        GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
+        rangerRole.setCreatedByUser("target-role");
+        rangerRole.setId(roleId);
+        grantRevokeRoleRequest.setGrantor(adminLoginID);
+        grantRevokeRoleRequest.setGrantOption(Boolean.TRUE);
+        Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(false);
+        Mockito.when(userMgr.getGroupsForUser(adminLoginID)).thenReturn(new HashSet<>(Collections.singletonList("real-admin-group")));
+        try {
+            Mockito.when(roleStore.getRole(Mockito.anyString())).thenReturn(rangerRole);
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        RESTResponse resp = roleRest.revokeRole(serviceName, grantRevokeRoleRequest, Mockito.mock(HttpServletRequest.class));
+        Assertions.assertNotNull(resp);
+        Assertions.assertEquals(resp.getStatusCode(), RESTResponse.STATUS_SUCCESS);
+    }
+
+    @Test
+    public void test14gRevokeRoleRealGroupMembershipMismatchRejected() {
+        String serviceName = "serviceName";
+        RangerRole.RoleMember groupMember = new RangerRole.RoleMember("real-admin-group", true);
+        RangerRole rangerRole = new RangerRole("target-role", "target-role", null, new ArrayList<>(), new ArrayList<>(Collections.singletonList(groupMember)));
+        GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
+        rangerRole.setCreatedByUser("target-role");
+        rangerRole.setId(roleId);
+        grantRevokeRoleRequest.setGrantor(adminLoginID);
+        grantRevokeRoleRequest.setGrantOption(Boolean.TRUE);
+        Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(false);
+        Mockito.when(userMgr.getGroupsForUser(adminLoginID)).thenReturn(new HashSet<>(Arrays.asList("users", "developers")));
+        try {
+            Mockito.when(roleStore.getRole(Mockito.anyString())).thenReturn(rangerRole);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        boolean denied = false;
+        try {
+            roleRest.revokeRole(serviceName, grantRevokeRoleRequest, Mockito.mock(HttpServletRequest.class));
+        } catch (Throwable expected) {
+            denied = true;
+        }
+        Assertions.assertTrue(denied, "expected revokeRole to deny access for mismatched real groups");
+        Mockito.verify(userMgr, Mockito.atLeastOnce()).getGroupsForUser(adminLoginID);
+        try {
+            Mockito.verify(roleStore, Mockito.never()).updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), Mockito.anyBoolean());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Test
+    public void test14eRevokeRoleBlockedForAuditor() {
+        Assertions.assertThrows(WebApplicationException.class, () -> {
+            String serviceName = "serviceName";
+            GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
+            Mockito.doThrow(new WebApplicationException()).when(bizUtil).blockAuditorRoleUser();
+            roleRest.revokeRole(serviceName, grantRevokeRoleRequest, Mockito.mock(HttpServletRequest.class));
+        });
+    }
+
+    @Test
     public void test15bGetUserRoles() {
         Assertions.assertThrows(Throwable.class, () -> {
             Set<RangerRole> rangerRoles = new HashSet<>();
@@ -737,6 +980,84 @@ public class TestRoleREST {
             Mockito.when(roleRefUpdater.getRangerDaoManager().getXXRoleRefUser().findByUserName(adminLoginID)).thenReturn(xxRoleRefRoleList);
             Mockito.when(roleRefUpdater.getRangerDaoManager().getXXRoleRefGroup().findByGroupName(adminLoginID)).thenReturn(xxRoleRefGroupList);
             roleRest.getUserRoles(adminLoginID, Mockito.mock(HttpServletRequest.class));
+        });
+    }
+
+    @Test
+    public void test15cGetUserRolesUnauthorized() {
+        Assertions.assertThrows(Throwable.class, () -> {
+            Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(false);
+            roleRest.getUserRoles("someOtherUser", Mockito.mock(HttpServletRequest.class));
+            Mockito.verify(restErrorUtil, Mockito.times(1)).createRESTException(Mockito.anyString());
+        });
+    }
+
+    @Test
+    public void test15dGetUserRolesSelfLookupAllowedWithoutAdmin() {
+        Set<RangerRole> rangerRoles = new HashSet<>();
+        RangerRole rangerRole = createRole();
+        rangerRoles.add(rangerRole);
+        Set<String> groups = new HashSet<>();
+        Mockito.when(xUserService.getXUserByUserName(Mockito.anyString())).thenReturn(createVXUser());
+        Mockito.when(userMgr.getGroupsForUser(Mockito.anyString())).thenReturn(groups);
+        try {
+            Mockito.when(roleStore.getRoleNames(Mockito.anyString(), eq(groups))).thenReturn(rangerRoles);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        List<String> returnedRoles = roleRest.getUserRoles(adminLoginID, Mockito.mock(HttpServletRequest.class));
+        Assertions.assertNotNull(returnedRoles);
+        Assertions.assertEquals(returnedRoles.size(), rangerRoles.size());
+    }
+
+    @Test
+    public void test13gGrantRoleImpersonationByPrivilegedCallerHonorsCallerAssertedGroups() {
+        String serviceName = "serviceName";
+        String impersonatedGrantor = "proxy-service-admin";
+        boolean isRefTableCleanupRequired = true;
+        RangerRole.RoleMember groupMember = new RangerRole.RoleMember("asserted-group", true);
+        RangerRole rangerRole = new RangerRole("target-role", "target-role", null, new ArrayList<>(), new ArrayList<>(Collections.singletonList(groupMember)));
+        GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
+
+        rangerRole.setCreatedByUser("target-role");
+        rangerRole.setId(roleId);
+
+        // grantor != the real logged-in user ("admin", per @BeforeEach) -- this is the impersonation branch.
+        grantRevokeRoleRequest.setGrantor(impersonatedGrantor);
+        grantRevokeRoleRequest.setGrantorGroups(new HashSet<>(Collections.singletonList("asserted-group")));
+
+        // the REAL caller (loggedInUser="admin") is a proven ranger admin -- only then is entering the
+        // impersonation branch, and trusting its group assertion for the impersonated user, safe.
+        Mockito.when(bizUtil.isUserRangerAdmin(adminLoginID)).thenReturn(true);
+        Mockito.when(bizUtil.isUserRangerAdmin(Mockito.argThat(u -> !adminLoginID.equals(u)))).thenReturn(false);
+        try {
+            Mockito.when(roleStore.getRole(Mockito.anyString())).thenReturn(rangerRole);
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        RESTResponse resp = roleRest.grantRole(serviceName, grantRevokeRoleRequest, Mockito.mock(HttpServletRequest.class));
+        Assertions.assertNotNull(resp);
+        Assertions.assertEquals(RESTResponse.STATUS_SUCCESS, resp.getStatusCode());
+        // the impersonated user's groups came from the request, not a directory lookup
+        Mockito.verify(userMgr, Mockito.never()).getGroupsForUser(impersonatedGrantor);
+    }
+
+    @Test
+    public void test13hGrantRoleImpersonationByUnprivilegedCallerRejectedRegardlessOfAssertedGroups() {
+        Assertions.assertThrows(Throwable.class, () -> {
+            String                 serviceName            = "serviceName";
+            String                 impersonatedGrantor    = "proxy-service-admin";
+            GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
+            grantRevokeRoleRequest.setGrantor(impersonatedGrantor);
+            grantRevokeRoleRequest.setGrantorGroups(new HashSet<>(Collections.singletonList("asserted-group")));
+            // the REAL caller ("admin") is NOT a ranger admin and NOT a service admin/service user for
+            // this service -- the impersonation gate rejects before the target role is even looked up
+            // (roleStore.getRole() is never reached on this path), so callerAssertedGroups is never read.
+            Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(false);
+            Mockito.when(svcStore.isServiceAdminUser(Mockito.anyString(), Mockito.anyString())).thenReturn(false);
+            roleRest.grantRole(serviceName, grantRevokeRoleRequest, Mockito.mock(HttpServletRequest.class));
+            Mockito.verify(restErrorUtil, Mockito.times(1)).createRESTException(Mockito.anyString());
         });
     }
 
@@ -845,6 +1166,47 @@ public class TestRoleREST {
                 throw new RuntimeException(e);
             }
         });
+    }
+
+    @Test
+    public void test17eGetSecureRangerRolesIfUpdatedKmsUsesServiceByNameForDP() throws Exception {
+        RangerRoles rangerRoles        = createRangerRoles();
+        String      serviceName        = "dev_kms";
+        String      pluginId           = "kms-plugin";
+        String      clusterName        = "";
+        String      pluginCapabilities = "";
+
+        XXService xService = createXXService();
+        xService.setName(serviceName);
+        xService.setType(Id);
+
+        XXServiceDef xServiceDef = new XXServiceDef();
+        xServiceDef.setId(Id);
+        xServiceDef.setImplclassname("org.apache.ranger.services.kms.RangerServiceKMS");
+
+        RangerService rangerService = new RangerService();
+        rangerService.setId(Id);
+        rangerService.setName(serviceName);
+
+        XXServiceDefDao xServiceDefDao = Mockito.mock(XXServiceDefDao.class);
+        HttpServletRequest request = Mockito.mock(HttpServletRequest.class);
+
+        Mockito.when(serviceUtil.isValidService(serviceName, request)).thenReturn(true);
+        Mockito.when(daoMgr.getXXService().findByName(serviceName)).thenReturn(xService);
+        Mockito.when(daoMgr.getXXServiceDef()).thenReturn(xServiceDefDao);
+        Mockito.when(xServiceDefDao.getById(xService.getType())).thenReturn(xServiceDef);
+        Mockito.when(bizUtil.isAdmin()).thenReturn(false);
+        Mockito.when(bizUtil.isKeyAdmin()).thenReturn(false);
+        Mockito.when(svcStore.getServiceByNameForDP(serviceName)).thenReturn(rangerService);
+        Mockito.when(bizUtil.isUserAllowed(rangerService, RoleREST.POLICY_DOWNLOAD_USERS)).thenReturn(true);
+        Mockito.when(roleStore.getRoles(serviceName, -1L)).thenReturn(rangerRoles);
+
+        RangerRoles result = roleRest.getSecureRangerRolesIfUpdated(serviceName, -1L, 0L, pluginId, clusterName, pluginCapabilities, request);
+
+        Assertions.assertNotNull(result);
+        Assertions.assertEquals(rangerRoles.getRangerRoles().size(), result.getRangerRoles().size());
+        Mockito.verify(svcStore).getServiceByNameForDP(serviceName);
+        Mockito.verify(bizUtil).isUserAllowed(rangerService, RoleREST.POLICY_DOWNLOAD_USERS);
     }
 
     // empty request roles (requestParamRoles = 0, dbRoles = 5, return = all dbRoles)
@@ -1134,10 +1496,11 @@ public class TestRoleREST {
         FormDataContentDisposition fileDetail                  = FormDataContentDisposition.name("file").fileName(jsonRoleFile.getName()).size(uploadedInputStream.toString().length()).build();
         boolean                    updateIfExists              = false;
         boolean                    createNonExistUserGroupRole = false;
+        boolean isRefTableCleanupRequired = false;
 
         Mockito.when(searchUtil.getSearchFilter(request, roleService.sortFields)).thenReturn(filter);
         Mockito.when(roleStore.getRoleNames(Mockito.any(SearchFilter.class))).thenReturn(roleList);
-        Mockito.when(roleStore.createRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroupRole))).thenReturn(rangerRole);
+        Mockito.when(roleStore.createRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroupRole), eq(isRefTableCleanupRequired))).thenReturn(rangerRole);
 
         RESTResponse resp = roleRest.importRolesFromFile(request, uploadedInputStream, fileDetail, updateIfExists, createNonExistUserGroupRole);
         Assertions.assertNotNull(resp);
@@ -1161,10 +1524,11 @@ public class TestRoleREST {
         FormDataContentDisposition fileDetail                  = FormDataContentDisposition.name("file").fileName(jsonRoleFile.getName()).size(uploadedInputStream.toString().length()).build();
         boolean                    updateIfExists              = false;
         boolean                    createNonExistUserGroupRole = true;
+        boolean isRefTableCleanupRequired = false;
 
         Mockito.when(searchUtil.getSearchFilter(request, roleService.sortFields)).thenReturn(filter);
         Mockito.when(roleStore.getRoleNames(Mockito.any(SearchFilter.class))).thenReturn(roleList);
-        Mockito.when(roleStore.createRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroupRole))).thenReturn(rangerRole);
+        Mockito.when(roleStore.createRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroupRole), eq(isRefTableCleanupRequired))).thenReturn(rangerRole);
 
         RESTResponse resp = roleRest.importRolesFromFile(request, uploadedInputStream, fileDetail, updateIfExists, createNonExistUserGroupRole);
         Assertions.assertNotNull(resp);
@@ -1192,7 +1556,8 @@ public class TestRoleREST {
         Mockito.when(searchUtil.getSearchFilter(request, roleService.sortFields)).thenReturn(filter);
         Mockito.when(roleStore.getRoleNames(Mockito.any(SearchFilter.class))).thenReturn(roleList);
         Mockito.when(roleStore.getRole(Mockito.anyString())).thenReturn(rangerRole);
-        Mockito.when(roleStore.createRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroupRole))).thenReturn(rangerRole);
+        Mockito.when(roleStore.createRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroupRole), eq(false))).thenReturn(rangerRole);
+        Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroupRole), eq(true))).thenReturn(rangerRole);
 
         RESTResponse resp = roleRest.importRolesFromFile(request, uploadedInputStream, fileDetail, updateIfExists, createNonExistUserGroupRole);
         Assertions.assertNotNull(resp);
@@ -1433,12 +1798,12 @@ public class TestRoleREST {
         boolean createNonExistUserGroup = true;
         RangerRole rangerRole = createRole();
         rangerRole.setUsers(null); // Set users to null
-
+        boolean isRefTableCleanupRequired = false;
         Mockito.when(validatorFactory.getRangerRoleValidator(roleStore)).thenReturn(Mockito.mock(RangerRoleValidator.class));
         Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(true);
 
         try {
-            Mockito.when(roleStore.createRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroup))).thenReturn(rangerRole);
+            Mockito.when(roleStore.createRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroup), eq(isRefTableCleanupRequired))).thenReturn(rangerRole);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -1451,6 +1816,7 @@ public class TestRoleREST {
     @Test
     public void test24CreateRoleWithEmptyUsers() {
         boolean createNonExistUserGroup = true;
+        boolean isRefTableCleanupRequired = false;
         RangerRole rangerRole = createRole();
         rangerRole.setUsers(new ArrayList<>()); // Set users to empty list
 
@@ -1458,7 +1824,7 @@ public class TestRoleREST {
         Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(true);
 
         try {
-            Mockito.when(roleStore.createRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroup))).thenReturn(rangerRole);
+            Mockito.when(roleStore.createRole(Mockito.any(RangerRole.class), eq(createNonExistUserGroup), eq(isRefTableCleanupRequired))).thenReturn(rangerRole);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -1471,6 +1837,7 @@ public class TestRoleREST {
     @Test
     public void test25UpdateRoleWithConcurrentModification() {
         Boolean createNonExistUserGroup = Boolean.TRUE;
+        boolean isRefTableCleanupRequired = true;
         RangerRole rangerRole = createRole();
         RangerRole rangerRoleOld = createRoleOld();
         rangerRoleOld.setVersion(1L);
@@ -1482,7 +1849,7 @@ public class TestRoleREST {
 
         try {
             Mockito.when(roleStore.getRole(Mockito.anyLong())).thenReturn(rangerRoleOld);
-            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean())).thenReturn(rangerRole);
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).thenReturn(rangerRole);
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -1510,6 +1877,7 @@ public class TestRoleREST {
     @Test
     public void test27AddUsersAndGroupsWithDuplicates() {
         RangerRole rangerRole = createRoleWithUsersAndGroups();
+        boolean isRefTableCleanupRequired = true;
         List<String> users = new ArrayList<>(Arrays.asList("test-role", "admin")); // Duplicate users
         List<String> groups = new ArrayList<>(Arrays.asList("test-group", "admin")); // Duplicate groups
         Boolean isAdmin = true;
@@ -1518,12 +1886,12 @@ public class TestRoleREST {
 
         try {
             Mockito.when(roleStore.getRole(Mockito.anyLong())).thenReturn(rangerRole);
-            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean())).then(AdditionalAnswers.returnsFirstArg());
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
 
-        RangerRole returnedRole = roleRest.addUsersAndGroups(roleId, users, groups, isAdmin);
+        RangerRole returnedRole = roleRest.addUsersAndGroups(roleId, users, groups, isAdmin, null);
         Assertions.assertNotNull(returnedRole);
     }
 
@@ -1532,17 +1900,17 @@ public class TestRoleREST {
         RangerRole rangerRole = createRoleWithUsersAndGroups();
         List<String> users = new ArrayList<>(Arrays.asList("non-existent-user"));
         List<String> groups = new ArrayList<>(Arrays.asList("non-existent-group"));
-
+        boolean isRefTableCleanupRequired = true;
         Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(true);
 
         try {
             Mockito.when(roleStore.getRole(Mockito.anyLong())).thenReturn(rangerRole);
-            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean())).then(AdditionalAnswers.returnsFirstArg());
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
 
-        RangerRole returnedRole = roleRest.removeUsersAndGroups(roleId, users, groups);
+        RangerRole returnedRole = roleRest.removeUsersAndGroups(roleId, users, groups, null);
         Assertions.assertNotNull(returnedRole);
     }
 
@@ -1561,6 +1929,7 @@ public class TestRoleREST {
     public void test30RevokeRoleWithNullGrantor() {
         RangerRole rangerRole = createRole();
         String serviceName = "serviceName";
+        boolean isRefTableCleanupRequired = true;
         GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
         grantRevokeRoleRequest.setGrantor(null); // Null grantor
 
@@ -1568,7 +1937,7 @@ public class TestRoleREST {
 
         try {
             Mockito.when(roleStore.getRole(Mockito.anyString())).thenReturn(rangerRole);
-            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean())).then(AdditionalAnswers.returnsFirstArg());
+            Mockito.when(roleStore.updateRole(Mockito.any(RangerRole.class), Mockito.anyBoolean(), eq(isRefTableCleanupRequired))).then(AdditionalAnswers.returnsFirstArg());
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
@@ -1644,5 +2013,25 @@ public class TestRoleREST {
         Assertions.assertThrows(Throwable.class, () -> {
             roleRest.getSecureRangerRolesIfUpdated(serviceName, -1L, 0L, pluginId, clusterName, pluginCapabilities, Mockito.mock(HttpServletRequest.class));
         });
+    }
+
+    @Test
+    public void test35GrantRoleNonExistentRole() throws Exception {
+        String                 serviceName            = "serviceName";
+        GrantRevokeRoleRequest grantRevokeRoleRequest = createGrantRevokeRoleRequest();
+        String                 roleName               = "role_100";
+        WebApplicationException roleNotFoundException   = new WebApplicationException("Role with name: " + roleName + " does not exist");
+
+        grantRevokeRoleRequest.setTargetRoles(new HashSet<>(Collections.singletonList(roleName)));
+
+        Mockito.when(bizUtil.isUserRangerAdmin(Mockito.anyString())).thenReturn(true);
+        Mockito.when(roleStore.getRole(roleName)).thenThrow(roleNotFoundException);
+
+        WebApplicationException exception = Assertions.assertThrows(WebApplicationException.class, () -> {
+            roleRest.grantRole(serviceName, grantRevokeRoleRequest, Mockito.mock(HttpServletRequest.class));
+        });
+
+        Assertions.assertNotNull(exception);
+        Mockito.verify(roleStore, Mockito.times(1)).getRole(roleName);
     }
 }

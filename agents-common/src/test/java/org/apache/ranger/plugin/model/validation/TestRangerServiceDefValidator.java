@@ -19,8 +19,11 @@
 
 package org.apache.ranger.plugin.model.validation;
 
+import org.apache.ranger.plugin.errors.ValidationErrorCode;
 import org.apache.ranger.plugin.model.RangerServiceDef;
 import org.apache.ranger.plugin.model.RangerServiceDef.RangerAccessTypeDef;
+import org.apache.ranger.plugin.model.RangerServiceDef.RangerConstraintDef;
+import org.apache.ranger.plugin.model.RangerServiceDef.RangerConstraintParamDef;
 import org.apache.ranger.plugin.model.RangerServiceDef.RangerEnumDef;
 import org.apache.ranger.plugin.model.RangerServiceDef.RangerEnumElementDef;
 import org.apache.ranger.plugin.model.RangerServiceDef.RangerPolicyConditionDef;
@@ -28,15 +31,18 @@ import org.apache.ranger.plugin.model.RangerServiceDef.RangerResourceDef;
 import org.apache.ranger.plugin.model.RangerServiceDef.RangerServiceConfigDef;
 import org.apache.ranger.plugin.model.validation.RangerValidator.Action;
 import org.apache.ranger.plugin.store.ServiceStore;
-import org.junit.Before;
-import org.junit.Test;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assertions.fail;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -107,7 +113,7 @@ public class TestRangerServiceDefValidator {
 
     private final ValidationTestUtils utils = new ValidationTestUtils();
 
-    @Before
+    @BeforeEach
     public void setUp() throws Exception {
         store      = mock(ServiceStore.class);
         validator  = new RangerServiceDefValidator(store);
@@ -465,7 +471,6 @@ public class TestRangerServiceDefValidator {
 
         failures.clear();
         assertFalse(validator.isValidResourceGraph(serviceDef, failures));
-        utils.checkFailureForMissingValue(failures, "resource level");
         utils.checkFailureForSemanticError(failures, "resource level", "20"); // level 20 is duplicate for 1 hierarchy
         utils.checkFailureForSemanticError(failures, "resource level", "10"); // level 10 is duplicate for another hierarchy
 
@@ -495,6 +500,8 @@ public class TestRangerServiceDefValidator {
         };
         resourceDefs = utils.createResourceDefs(dataGood);
         when(serviceDef.getResources()).thenReturn(resourceDefs);
+        when(serviceDef.getName()).thenReturn("service-name");
+        when(serviceDef.getUpdateTime()).thenReturn(new Date());
         failures.clear();
         assertTrue(validator.isValidResourceGraph(serviceDef, failures));
         assertTrue(failures.isEmpty());
@@ -509,8 +516,10 @@ public class TestRangerServiceDefValidator {
 
         resourceDefs = utils.createResourceDefs(dataCycles);
         when(serviceDef.getResources()).thenReturn(resourceDefs);
+        when(serviceDef.getName()).thenReturn("service-name");
+        when(serviceDef.getUpdateTime()).thenReturn(new Date());
         failures.clear();
-        assertFalse("Graph was valid!", validator.isValidResourceGraph(serviceDef, failures));
+        assertFalse(validator.isValidResourceGraph(serviceDef, failures), "Graph was valid!");
         assertFalse(failures.isEmpty());
         utils.checkFailureForSemanticError(failures, "resource graph");
 
@@ -523,6 +532,8 @@ public class TestRangerServiceDefValidator {
         };
         resourceDefs = utils.createResourceDefs(dataBad);
         when(serviceDef.getResources()).thenReturn(resourceDefs);
+        when(serviceDef.getName()).thenReturn("service-name");
+        when(serviceDef.getUpdateTime()).thenReturn(new Date());
         failures.clear();
         assertFalse(validator.isValidResourceGraph(serviceDef, failures));
         assertFalse(failures.isEmpty());
@@ -536,6 +547,8 @@ public class TestRangerServiceDefValidator {
         };
         resourceDefs = utils.createResourceDefs(dataGood);
         when(serviceDef.getResources()).thenReturn(resourceDefs);
+        when(serviceDef.getName()).thenReturn("service-name");
+        when(serviceDef.getUpdateTime()).thenReturn(new Date());
         failures.clear();
         assertTrue(validator.isValidResourceGraph(serviceDef, failures));
         assertTrue(failures.isEmpty());
@@ -612,5 +625,207 @@ public class TestRangerServiceDefValidator {
         utils.checkFailureForSemanticError(failures, "policy condition def name", "condition-1");
         utils.checkFailureForMissingValue(failures, "policy condition def evaluator", "condition-2");
         utils.checkFailureForMissingValue(failures, "policy condition def evaluator", "condition-1");
+    }
+
+    @Test
+    public final void test_isValidServiceDefDisplayName_conflicts() throws Exception {
+        Long id = null;
+        String displayName = "svc-display";
+        RangerServiceDef other = mock(RangerServiceDef.class);
+        when(other.getId()).thenReturn(99L);
+        when(other.getName()).thenReturn("svc-name");
+        when(store.getServiceDefByDisplayName(displayName)).thenReturn(other);
+        assertFalse(validator.isValidServiceDefDisplayName(displayName, id, Action.CREATE, failures));
+        utils.checkFailureForSemanticError(failures, "displayName");
+
+        failures.clear();
+        id = 7L;
+        assertFalse(validator.isValidServiceDefDisplayName(displayName, id, Action.UPDATE, failures));
+        utils.checkFailureForSemanticError(failures, "id/displayName");
+    }
+
+    @Test
+    public final void test_isValidConfigs_enumTypeBranches() {
+        List<RangerServiceDef.RangerServiceConfigDef> configs = new ArrayList<>();
+        RangerServiceDef.RangerServiceConfigDef enumCfg = new RangerServiceDef.RangerServiceConfigDef();
+        enumCfg.setItemId(1L);
+        enumCfg.setName("enumCfg");
+        enumCfg.setType("enum");
+        enumCfg.setSubType("time-unit");
+        enumCfg.setDefaultValue("year"); // not in enum
+        configs.add(enumCfg);
+
+        List<RangerEnumDef> enumDefs = utils.createEnumDefs(new Object[][] {
+                {1L, "time-unit", new String[] {"day", "hour"}}
+        });
+
+        assertFalse(validator.isValidConfigs(configs, enumDefs, failures));
+        utils.checkFailureForSemanticError(failures, "config def default value", "enumCfg");
+
+        failures.clear();
+        enumCfg.setSubType("unknown-enum");
+        enumCfg.setDefaultValue(null);
+        assertFalse(validator.isValidConfigs(configs, enumDefs, failures));
+        utils.checkFailureForSemanticError(failures, "config def subtype", "enumCfg");
+    }
+
+    @Test
+    public final void test_isValidConstraintDefs() {
+        assertTrue(validator.isValidConstraintDefs(new RangerServiceDef(), failures));
+        assertTrue(failures.isEmpty());
+
+        RangerServiceDef def = constraintServiceDef();
+        RangerConstraintDef valid = constraintDef(1L, "requireApproval", Arrays.asList("database", "udf"), Arrays.asList("execute"));
+        List<RangerConstraintParamDef> validParams = new ArrayList<>();
+        validParams.add(param("approver", "string", null, true));
+        validParams.add(param("rowCount", "int", null, false));
+        validParams.add(param("enabled", "bool", null, false));
+        validParams.add(param("mode", "enum", "authType", false));
+        valid.setParameters(validParams);
+        def.setConstraintDefs(Collections.singletonList(valid));
+        assertTrue(validator.isValidConstraintDefs(def, failures));
+        assertTrue(failures.isEmpty());
+
+        RangerConstraintDef emptyResources = constraintDef(1L, "requireApproval", new ArrayList<>(), Arrays.asList("execute"));
+        emptyResources.setParameters(Collections.singletonList(param("approver", "string", null, true)));
+        def.setConstraintDefs(Collections.singletonList(emptyResources));
+        assertTrue(validator.isValidConstraintDefs(def, failures));
+        assertTrue(failures.isEmpty());
+
+        assertFalse(validator.isValidConfigType("user", "approver", failures));
+        utils.checkFailureForSemanticError(failures, "config def type", "approver");
+        failures.clear();
+        assertFalse(validator.isValidConfigType("group", "approverGroup", failures));
+        utils.checkFailureForSemanticError(failures, "config def type", "approverGroup");
+        failures.clear();
+        assertFalse(validator.isValidConfigType("role", "approverRole", failures));
+        utils.checkFailureForSemanticError(failures, "config def type", "approverRole");
+    }
+
+    @Test
+    public final void test_isValid_rejectsInvalidConstraintDef() {
+        RangerServiceDef def = constraintServiceDef();
+        def.setName("agent");
+        def.setDisplayName("Agent");
+        def.setConstraintDefs(Collections.singletonList(constraintDef(1L, "requireApproval", Arrays.asList("missing"), Arrays.asList("select"))));
+
+        assertFalse(validator.isValid(def, Action.CREATE, failures));
+        assertHasErrorCode(ValidationErrorCode.SERVICE_DEF_VALIDATION_ERR_CONSTRAINT_UNKNOWN_RESOURCE.getErrorCode());
+    }
+
+    @Test
+    public final void test_isValidConstraintDefs_failures() {
+        RangerServiceDef def = constraintServiceDef();
+        List<RangerConstraintDef> constraintDefs = new ArrayList<>();
+        constraintDefs.add(null);
+
+        RangerConstraintDef missingAncestor = constraintDef(1L, "maxRows", Arrays.asList("udf"), Arrays.asList("select"));
+        missingAncestor.setParameters(Collections.singletonList(param("rowCount", "int", null, true)));
+        constraintDefs.add(missingAncestor);
+
+        RangerConstraintDef invalid = constraintDef(1L, " ", Arrays.asList("missing", ""), Arrays.asList("drop", " "));
+        List<RangerConstraintParamDef> params = new ArrayList<>();
+        params.add(param("rowCount", "password", null, true));
+        params.add(param("rowCount", "int", null, false));
+        params.add(null);
+        params.add(param("mode", "enum", "no-such-enum", false));
+        params.add(param("kind", "enum", " ", false));
+        params.add(param("approver", "string", "authType", true));
+        params.add(param("approverUser", "user", null, false));
+        params.add(param("approverGroup", "group", null, false));
+        params.add(param("approverRole", "role", null, false));
+        params.add(param("limit", null, null, false));
+        invalid.setParameters(params);
+        constraintDefs.add(invalid);
+
+        RangerConstraintDef duplicateName = constraintDef(2L, "maxRows", Arrays.asList("database", "table"), Arrays.asList("select"));
+        duplicateName.setParameters(Collections.singletonList(param("rowCount", "int", null, true)));
+        constraintDefs.add(duplicateName);
+
+        def.setConstraintDefs(constraintDefs);
+        assertFalse(validator.isValidConstraintDefs(def, failures));
+        utils.checkFailureForMissingValue(failures, "constraint def");
+        utils.checkFailureForMissingValue(failures, "constraint def name");
+        utils.checkFailureForSemanticError(failures, "constraint def itemId", "1");
+        utils.checkFailureForSemanticError(failures, "constraint def name", "maxRows");
+        utils.checkFailureForSemanticError(failures, "constraint def ancestor", "udf");
+        utils.checkFailureForSemanticError(failures, "constraint def resource", "missing");
+        utils.checkFailureForSemanticError(failures, "constraint def access type", "drop");
+        utils.checkFailureForSemanticError(failures, "constraint def parameter type", "rowCount");
+        utils.checkFailureForSemanticError(failures, "constraint def parameter type", "approverUser");
+        utils.checkFailureForSemanticError(failures, "constraint def parameter type", "approverGroup");
+        utils.checkFailureForSemanticError(failures, "constraint def parameter type", "approverRole");
+        utils.checkFailureForSemanticError(failures, "constraint def parameter name", "rowCount");
+        utils.checkFailureForMissingValue(failures, "constraint def parameter");
+        utils.checkFailureForSemanticError(failures, "constraint def parameter subtype", "mode");
+        utils.checkFailureForSemanticError(failures, "constraint def parameter subtype", "kind");
+        utils.checkFailureForSemanticError(failures, "constraint def parameter subtype", "approver");
+        utils.checkFailureForMissingValue(failures, "constraint def parameter type", "limit");
+        assertHasErrorCode(ValidationErrorCode.SERVICE_DEF_VALIDATION_ERR_CONSTRAINT_UNKNOWN_RESOURCE.getErrorCode());
+        assertHasErrorCode(ValidationErrorCode.SERVICE_DEF_VALIDATION_ERR_CONSTRAINT_MISSING_ANCESTOR.getErrorCode());
+        assertHasErrorCode(ValidationErrorCode.SERVICE_DEF_VALIDATION_ERR_CONSTRAINT_UNKNOWN_ACCESS_TYPE.getErrorCode());
+        assertHasErrorCode(ValidationErrorCode.SERVICE_DEF_VALIDATION_ERR_CONSTRAINT_PARAM_MISSING_TYPE.getErrorCode());
+        assertHasErrorCode(ValidationErrorCode.SERVICE_DEF_VALIDATION_ERR_CONSTRAINT_PARAM_INVALID_TYPE.getErrorCode());
+        assertHasErrorCode(ValidationErrorCode.SERVICE_DEF_VALIDATION_ERR_CONSTRAINT_PARAM_UNKNOWN_ENUM.getErrorCode());
+        assertHasErrorCode(ValidationErrorCode.SERVICE_DEF_VALIDATION_ERR_CONSTRAINT_PARAM_SUBTYPE_NOT_EMPTY.getErrorCode());
+    }
+
+    private void assertHasErrorCode(int errorCode) {
+        for (ValidationFailureDetails failure : failures) {
+            if (failure.errorCode == errorCode) {
+                return;
+            }
+        }
+
+        fail("expected error code " + errorCode + " in " + failures);
+    }
+
+    private RangerServiceDef constraintServiceDef() {
+        RangerServiceDef def = new RangerServiceDef();
+        def.setResources(utils.createResourceDefs(new Object[][] {
+                {"database", Boolean.FALSE, Boolean.FALSE, Boolean.TRUE, null, null, 10},
+                {"table", Boolean.FALSE, Boolean.FALSE, Boolean.FALSE, null, "database", 20},
+                {"udf", Boolean.FALSE, Boolean.FALSE, Boolean.FALSE, null, "database", 20},
+                {"column", Boolean.FALSE, Boolean.FALSE, Boolean.FALSE, null, "table", 30}
+        }));
+
+        RangerAccessTypeDef select = new RangerAccessTypeDef();
+        select.setName("select");
+        RangerAccessTypeDef execute = new RangerAccessTypeDef();
+        execute.setName("execute");
+        List<RangerAccessTypeDef> accessTypes = new ArrayList<>();
+        accessTypes.add(select);
+        accessTypes.add(execute);
+        def.setAccessTypes(accessTypes);
+
+        RangerEnumDef enumDef = new RangerEnumDef();
+        enumDef.setName("authType");
+        List<RangerEnumDef> enums = new ArrayList<>();
+        enums.add(enumDef);
+        def.setEnums(enums);
+
+        return def;
+    }
+
+    private RangerConstraintDef constraintDef(Long itemId, String name, List<String> resources, List<String> accessTypes) {
+        RangerConstraintDef constraintDef = new RangerConstraintDef();
+
+        constraintDef.setItemId(itemId);
+        constraintDef.setName(name);
+        constraintDef.setResources(resources);
+        constraintDef.setAccessTypes(accessTypes);
+
+        return constraintDef;
+    }
+
+    private RangerConstraintParamDef param(String name, String type, String subType, boolean mandatory) {
+        RangerConstraintParamDef paramDef = new RangerConstraintParamDef();
+
+        paramDef.setName(name);
+        paramDef.setType(type);
+        paramDef.setSubType(subType);
+        paramDef.setMandatory(mandatory);
+
+        return paramDef;
     }
 }

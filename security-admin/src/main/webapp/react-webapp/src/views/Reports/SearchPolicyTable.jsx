@@ -28,12 +28,17 @@ import {
   Row,
   Table
 } from "react-bootstrap";
-import { isEmpty, find } from "lodash";
+import { isEmpty, find, keyBy } from "lodash";
 import { MoreLess } from "Components/CommonComponents";
 import XATableLayout from "Components/XATableLayout";
 import { fetchApi } from "Utils/fetchAPI";
 import { Loader } from "Components/CommonComponents";
-import { isAuditor, isKMSAuditor } from "Utils/XAUtils";
+import {
+  isAuditor,
+  isKMSAuditor,
+  getPolicyConditionDisplayLbl
+} from "Utils/XAUtils";
+import { getPolicyPermissionItemDisplayLbl } from "../../utils/XAUtils";
 
 function SearchPolicyTable(props) {
   const [searchPoliciesData, setSearchPolicies] = useState([]);
@@ -276,7 +281,7 @@ function SearchPolicyTable(props) {
             </Accordion.Body>
           </Accordion.Item>
         </Accordion>
-        <Modal show={showModal} onHide={hidePolicyConditionModal} size="lg">
+        <Modal show={showModal} onHide={hidePolicyConditionModal} size="xl">
           <Modal.Header closeButton>
             <Modal.Title>Policy Condition Details</Modal.Title>
           </Modal.Header>
@@ -301,7 +306,11 @@ function PolicyConditionData(props) {
 
     if (!isEmpty(policyItem)) {
       tableRow = policyItem?.map((items, index) => {
-        access = items.accesses?.map((obj) => obj.type);
+        access = getPolicyPermissionItemDisplayLbl(
+          props.serviceDef,
+          0,
+          items.accesses
+        )?.map((obj) => obj.label);
         return (
           <tr key={index}>
             <td>
@@ -326,17 +335,32 @@ function PolicyConditionData(props) {
               )}
             </td>
             {!isEmpty(props?.serviceDef?.policyConditions) && (
-              <td className="text-center">
+              <td>
                 {!isEmpty(items.conditions)
                   ? items.conditions.map((obj, index) => {
+                      const policyMap = keyBy(
+                        props.serviceDef.policyConditions,
+                        "name"
+                      );
+
+                      const conditionObj = policyMap[obj.type];
+
+                      if (isEmpty(conditionObj)) {
+                        return null;
+                      }
+
+                      const label = conditionObj?.label
+                        ? getPolicyConditionDisplayLbl(conditionObj.label)
+                        : "";
+
+                      const values = (obj.values || []).join(", ");
+
                       return (
-                        <h6 className="d-inline me-1" key={index}>
-                          <Badge
-                            bg="info"
-                            className="d-inline me-1"
-                            key={obj.values}
-                          >{`${obj.type}: ${obj.values.join(", ")}`}</Badge>
-                        </h6>
+                        <Badge
+                          bg="info"
+                          className="me-1 line-clamp line-clamp-3 text-start"
+                          key={`${obj.type}-${index}`}
+                        >{`${label}: ${values}`}</Badge>
                       );
                     })
                   : "--"}
@@ -349,6 +373,15 @@ function PolicyConditionData(props) {
                 <div className="text-center">--</div>
               )}
             </td>
+            {props?.serviceDef?.name != "tag" && (
+              <td className="text-center">
+                <input
+                  type="checkbox"
+                  checked={items.delegateAdmin === false ? false : true}
+                  disabled="disabled"
+                />
+              </td>
+            )}
           </tr>
         );
       });
@@ -357,7 +390,7 @@ function PolicyConditionData(props) {
         <tr key="no-data">
           <td
             className="text-center"
-            colSpan={!isEmpty(props?.serviceDef?.policyConditions) ? "5" : "4"}
+            colSpan={!isEmpty(props?.serviceDef?.policyConditions) ? "6" : "5"}
           >
             <span className="text-muted">&quot;No data to show!!&quot;</span>
           </td>
@@ -372,7 +405,11 @@ function PolicyConditionData(props) {
     let access = [];
     if (!isEmpty(policyItem)) {
       tableRow = policyItem?.map((items, index) => {
-        access = items.accesses?.map((obj) => obj.type);
+        access = getPolicyPermissionItemDisplayLbl(
+          props.serviceDef,
+          1,
+          items.accesses
+        )?.map((obj) => obj.label);
         return (
           <tr key={index}>
             <td>
@@ -397,17 +434,20 @@ function PolicyConditionData(props) {
               )}
             </td>
             {!isEmpty(props?.serviceDef?.policyConditions) && (
-              <td className="text-center">
+              <td>
                 {!isEmpty(items.conditions)
                   ? items.conditions.map((obj, index) => {
+                      let conditionObj = props.serviceDef.policyConditions.find(
+                        (condition) => condition.name === obj.type
+                      );
                       return (
-                        <h6 className="d-inline me-1" key={index}>
-                          <Badge
-                            bg="info"
-                            className="d-inline me-1"
-                            key={obj.values}
-                          >{`${obj.type}: ${obj.values.join(", ")}`}</Badge>
-                        </h6>
+                        <Badge
+                          bg="info"
+                          className="me-1 line-clamp line-clamp-3 text-start"
+                          key={index}
+                        >{`${getPolicyConditionDisplayLbl(
+                          conditionObj.label
+                        )}: ${obj.values.join(", ")}`}</Badge>
                       );
                     })
                   : "--"}
@@ -454,7 +494,11 @@ function PolicyConditionData(props) {
     let access = [];
     if (!isEmpty(policyItem)) {
       tableRow = policyItem?.map((items, index) => {
-        access = items.accesses?.map((obj) => obj.type);
+        access = getPolicyPermissionItemDisplayLbl(
+          props.serviceDef,
+          2,
+          items.accesses
+        )?.map((obj) => obj.label);
         return (
           <tr key={index}>
             <td>
@@ -478,6 +522,26 @@ function PolicyConditionData(props) {
                 <div className="text-center">--</div>
               )}
             </td>
+            {!isEmpty(props?.serviceDef?.policyConditions) && (
+              <td>
+                {!isEmpty(items.conditions)
+                  ? items.conditions.map((obj, index) => {
+                      let conditionObj = props.serviceDef.policyConditions.find(
+                        (condition) => condition.name === obj.type
+                      );
+                      return (
+                        <Badge
+                          bg="info"
+                          className="me-1 line-clamp line-clamp-3 text-start"
+                          key={index}
+                        >{`${getPolicyConditionDisplayLbl(
+                          conditionObj.label
+                        )}: ${obj.values.join(", ")}`}</Badge>
+                      );
+                    })
+                  : "--"}
+              </td>
+            )}
             <td>
               {!isEmpty(access) ? (
                 <MoreLess data={access} />
@@ -515,7 +579,7 @@ function PolicyConditionData(props) {
     <React.Fragment>
       {props.policyData.policyType == 0 && (
         <>
-          <p className="form-header">Allow Conditions</p>
+          <p className="form-header">Allow Rules</p>
           <div className="overflow-x-auto">
             <Table
               bordered
@@ -528,11 +592,10 @@ function PolicyConditionData(props) {
                   <th>Groups</th>
                   <th>Users</th>
                   {!isEmpty(props?.serviceDef?.policyConditions) && (
-                    <th className="text-center text-nowrap">
-                      Policy Conditions
-                    </th>
+                    <th className="text-center text-nowrap">Rule Conditions</th>
                   )}
-                  <th>Accesses</th>
+                  <th>Permissions</th>
+                  {props?.serviceDef?.name != "tag" && <th>Delegate Admin</th>}
                 </tr>
               </thead>
               <tbody>{getPolicyData(props.policyData.policyItems)}</tbody>
@@ -541,7 +604,7 @@ function PolicyConditionData(props) {
           {props.serviceDef?.options?.enableDenyAndExceptionsInPolicies ==
             "true" && (
             <>
-              <p className="form-header">Allow Exclude</p>
+              <p className="form-header">Allow Exclude Rules</p>
               <div className="overflow-x-auto">
                 <Table
                   bordered
@@ -555,10 +618,13 @@ function PolicyConditionData(props) {
                       <th>Users</th>
                       {!isEmpty(props?.serviceDef?.policyConditions) && (
                         <th className="text-center text-nowrap">
-                          Policy Conditions
+                          Rule Conditions
                         </th>
                       )}
-                      <th>Accesses</th>
+                      <th>Permissions</th>
+                      {props?.serviceDef?.name != "tag" && (
+                        <th>Delegate Admin</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -566,7 +632,7 @@ function PolicyConditionData(props) {
                   </tbody>
                 </Table>
               </div>
-              <p className="form-header">Deny Conditions</p>
+              <p className="form-header">Deny Rules</p>
               <div className="overflow-x-auto">
                 <Table
                   bordered
@@ -580,10 +646,13 @@ function PolicyConditionData(props) {
                       <th>Users</th>
                       {!isEmpty(props?.serviceDef?.policyConditions) && (
                         <th className="text-center text-nowrap">
-                          Policy Conditions
+                          Rule Conditions
                         </th>
                       )}
-                      <th>Accesses</th>
+                      <th>Permissions</th>
+                      {props?.serviceDef?.name != "tag" && (
+                        <th>Delegate Admin</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -591,7 +660,7 @@ function PolicyConditionData(props) {
                   </tbody>
                 </Table>
               </div>
-              <p className="form-header">Deny Exclude</p>
+              <p className="form-header">Deny Exclude Rules</p>
               <div className="overflow-x-auto">
                 <Table
                   bordered
@@ -605,10 +674,13 @@ function PolicyConditionData(props) {
                       <th>Users</th>
                       {!isEmpty(props?.serviceDef?.policyConditions) && (
                         <th className="text-center text-nowrap">
-                          Policy Conditions
+                          Rule Conditions
                         </th>
                       )}
-                      <th>Accesses</th>
+                      <th>Permissions</th>
+                      {props?.serviceDef?.name != "tag" && (
+                        <th>Delegate Admin</th>
+                      )}
                     </tr>
                   </thead>
                   <tbody>
@@ -623,7 +695,7 @@ function PolicyConditionData(props) {
 
       {props.policyData.policyType == 1 && (
         <>
-          <p className="form-header ">Masking Conditions</p>
+          <p className="form-header ">Mask Rules</p>
           <div className="overflow-x-auto">
             <Table
               bordered
@@ -636,11 +708,9 @@ function PolicyConditionData(props) {
                   <th>Groups</th>
                   <th>Users</th>
                   {!isEmpty(props?.serviceDef?.policyConditions) && (
-                    <th className="text-center text-nowrap">
-                      Policy Conditions
-                    </th>
+                    <th className="text-center text-nowrap">Rule Conditions</th>
                   )}
-                  <th>Accesses</th>
+                  <th>Permissions</th>
                   <th>Masking Condition</th>
                 </tr>
               </thead>
@@ -654,7 +724,7 @@ function PolicyConditionData(props) {
 
       {props.policyData.policyType == 2 && (
         <>
-          <p className="form-header">Row Level Conditions</p>
+          <p className="form-header">Row Filter Rules</p>
           <div className="overflow-x-auto">
             <Table
               bordered
@@ -666,7 +736,10 @@ function PolicyConditionData(props) {
                   <th>Roles</th>
                   <th>Groups</th>
                   <th>Users</th>
-                  <th>Accesses</th>
+                  {!isEmpty(props?.serviceDef?.policyConditions) && (
+                    <th className="text-center text-nowrap">Rule Conditions</th>
+                  )}
+                  <th>Permissions</th>
                   <th>Row Level Filter</th>
                 </tr>
               </thead>

@@ -256,6 +256,16 @@ public class RangerAPIList {
     public static final String SEARCH_DATASET_IN_PROJECT = "GdsREST.searchDatasetInProject";
     public static final String GET_DATASET_GRANTS        = "GdsREST.getDataSetGrants";
     public static final String UPDATE_DATASET_GRANTS     = "GdsREST.updateDataSetGrants";
+    public static final String EVALUATE_SHARED_RESOURCES = "GdsREST.evaluateSharedResources";
+
+    /**
+     * List of APIs for AuditMetricsREST
+     */
+    public static final String GET_LATEST_AUDIT_METRICS     = "AuditMetricsREST.getLatestAuditMetrics";
+    public static final String GET_AUDIT_METRICS            = "AuditMetricsREST.getAuditMetrics";
+    public static final String GET_ALL_LATEST_AUDIT_METRICS = "AuditMetricsREST.getAllLatestRangerAuditMetrics";
+    public static final String GET_DAILY_AUDIT_METRICS      = "AuditMetricsREST.getDailyAuditMetrics";
+    public static final String GET_DAYS_AUDIT_METRICS       = "AuditMetricsREST.getDaysAuditMetrics";
 
     /**
      * List of APIs for PublicAPIsv2

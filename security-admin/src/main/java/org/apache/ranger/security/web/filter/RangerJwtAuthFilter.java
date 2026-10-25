@@ -18,11 +18,16 @@
  */
 package org.apache.ranger.security.web.filter;
 
-import org.apache.log4j.Logger;
+import org.apache.hadoop.conf.Configuration;
+import org.apache.hadoop.security.UserGroupInformation;
+import org.apache.hadoop.security.authorize.AuthorizationException;
+import org.apache.hadoop.security.authorize.ProxyUsers;
 import org.apache.ranger.authz.handler.RangerAuth;
 import org.apache.ranger.authz.handler.jwt.RangerDefaultJwtAuthHandler;
 import org.apache.ranger.authz.handler.jwt.RangerJwtAuthHandler;
 import org.apache.ranger.common.PropertiesUtil;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
@@ -52,7 +57,7 @@ import java.util.Properties;
 @Lazy(true)
 @Component
 public class RangerJwtAuthFilter extends RangerDefaultJwtAuthHandler implements Filter {
-    private static final Logger LOG = Logger.getLogger(RangerJwtAuthFilter.class);
+    private static final Logger LOG = LoggerFactory.getLogger(RangerJwtAuthFilter.class);
 
     private static final String DEFAULT_RANGER_ROLE = "ROLE_USER";
 
@@ -70,10 +75,13 @@ public class RangerJwtAuthFilter extends RangerDefaultJwtAuthHandler implements 
 
             config.setProperty(RangerJwtAuthHandler.KEY_PROVIDER_URL, PropertiesUtil.getProperty(RangerSSOAuthenticationFilter.JWT_AUTH_PROVIDER_URL));
             config.setProperty(RangerJwtAuthHandler.KEY_JWT_PUBLIC_KEY, PropertiesUtil.getProperty(RangerSSOAuthenticationFilter.JWT_PUBLIC_KEY, ""));
-            config.setProperty(RangerJwtAuthHandler.KEY_JWT_COOKIE_NAME, PropertiesUtil.getProperty(RangerSSOAuthenticationFilter.JWT_COOKIE_NAME, RangerSSOAuthenticationFilter.JWT_COOKIE_NAME_DEFAULT));
             config.setProperty(RangerJwtAuthHandler.KEY_JWT_AUDIENCES, PropertiesUtil.getProperty(RangerSSOAuthenticationFilter.JWT_AUDIENCES, ""));
+            config.setProperty(RangerJwtAuthHandler.KEY_JWT_ISS, PropertiesUtil.getProperty(RangerSSOAuthenticationFilter.JWT_ISSUER, ""));
 
             super.initialize(config);
+
+            Configuration conf = getProxyuserConfiguration();
+            ProxyUsers.refreshSuperUserGroupsConfiguration(conf, "ranger.proxyuser.");
         } catch (Exception e) {
             LOG.error("Failed to initialize Ranger Admin JWT Auth Filter.", e);
         }
@@ -109,11 +117,41 @@ public class RangerJwtAuthFilter extends RangerDefaultJwtAuthHandler implements 
 
         if (auth != null) {
             if (LOG.isDebugEnabled()) {
-                LOG.debug("<<<=== RangerJwtAuthFilter.doFilter() - user=[" + auth.getPrincipal() + "], isUserAuthenticated? [" + auth.isAuthenticated() + "]");
+                LOG.debug("<<<=== RangerJwtAuthFilter.doFilter() - user=[{}], isUserAuthenticated? [{}]", auth.getPrincipal(), auth.isAuthenticated());
             }
         } else {
             LOG.warn("<<<=== RangerJwtAuthFilter.doFilter() - Failed to authenticate request using Ranger JWT authentication framework.");
         }
+    }
+
+    @Override
+    protected boolean isProxyEnabled() {
+        return PropertiesUtil.getBooleanProperty("ranger.authentication.allow.trustedproxy", false);
+    }
+
+    @Override
+    protected boolean authorizeProxyUser(String realUser, String doAsUser, String remoteAddr) {
+        try {
+            UserGroupInformation ugi = UserGroupInformation.createRemoteUser(realUser);
+            ugi = UserGroupInformation.createProxyUser(doAsUser, ugi);
+            ProxyUsers.authorize(ugi, remoteAddr);
+            LOG.debug("RangerJwtAuthFilter.authorizeProxyUser(): ProxyUsers.authorize SUCCEEDED for realUser=[{}], doAs=[{}]",
+                    realUser, doAsUser);
+            return true;
+        } catch (AuthorizationException ex) {
+            LOG.warn("JWT ProxyUsers.authorize failed for doAs=[{}], realUser=[{}]: {}", doAsUser, realUser, ex.getMessage());
+            return false;
+        }
+    }
+
+    private Configuration getProxyuserConfiguration() {
+        Configuration conf = new Configuration(false);
+        PropertiesUtil.getPropertiesMap().forEach((k, v) -> {
+            if (k.startsWith("ranger.proxyuser.")) {
+                conf.set(k, v);
+            }
+        });
+        return conf;
     }
 
     @Override

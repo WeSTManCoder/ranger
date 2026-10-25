@@ -7,7 +7,6 @@ services:
         - RANGER_BASE_IMAGE=${RANGER_BASE_IMAGE}
         - RANGER_BASE_VERSION=${RANGER_BASE_VERSION}
         - RANGER_VERSION=${RANGER_VERSION}
-        - RANGER_DB_TYPE=${RANGER_DB_TYPE}
         - KERBEROS_ENABLED=${KERBEROS_ENABLED}
     image: ranger:latest
     container_name: ranger
@@ -17,7 +16,7 @@ services:
       - ./dist/version:/home/ranger/dist/version:ro
       - ./scripts/kdc/krb5.conf:/etc/krb5.conf:ro
       - ./scripts/hadoop/core-site.xml:/home/ranger/scripts/core-site.xml:ro
-      - ./scripts/admin/ranger-admin-install-${RANGER_DB_TYPE}.properties:/opt/ranger/admin/install.properties
+      - ./scripts/admin/configs:/opt/ranger/admin/configs:ro
     stdin_open: true
     tty: true
     networks:
@@ -31,13 +30,21 @@ services:
         condition: service_started
       ranger-db:
         condition: service_healthy
-      ranger-solr:
-        condition: service_started
     environment:
       - RANGER_VERSION
       - RANGER_DB_TYPE
+      - AUDIT_INDEX_STORE
       - KERBEROS_ENABLED
       - DEBUG_ADMIN=${DEBUG_ADMIN:-false}
+      - JAVA_OPTS
+      - RANGER_ADMIN_MAX_HEAP
+      - RANGER_JVM_METASPACE
+      - RANGER_JVM_MAX_METASPACE
+      - RANGER_ADMIN_DB_PASSWORD
+      - RANGER_ADMIN_PASSWORD
+      - RANGER_USERSYNC_PASSWORD
+      - RANGER_TAGSYNC_PASSWORD
+      - RANGER_KEYADMIN_PASSWORD
     command:
       - /home/ranger/scripts/ranger.sh
 
@@ -73,46 +80,28 @@ services:
       context: .
       dockerfile: Dockerfile.ranger-zk
       args:
+        - RANGER_BASE_IMAGE=${RANGER_BASE_IMAGE}
+        - RANGER_BASE_VERSION=${RANGER_BASE_VERSION}
         - ZK_VERSION=${ZK_VERSION}
         - KERBEROS_ENABLED=${KERBEROS_ENABLED}
     image: ranger-zk
     container_name: ranger-zk
     hostname: ranger-zk.rangernw
+    depends_on:
+      ranger-kdc:
+        condition: service_healthy
+    volumes:
+      - ./dist/keytabs/ranger-zk:/etc/keytabs
+      - ./scripts/kdc/krb5.conf:/etc/krb5.conf:ro
+      - ./scripts/zk/jaas.conf:/etc/zookeeper/jaas.conf
+      - ./scripts/zk/zookeeper-with-kerberos.sh:/zookeeper-with-kerberos.sh:ro
+    entrypoint: [ "/bin/bash", "/zookeeper-with-kerberos.sh" ]
     networks:
       - ranger
     ports:
       - "2181:2181"
     environment:
       - KERBEROS_ENABLED
-
-  ranger-solr:
-    build:
-      context: .
-      dockerfile: Dockerfile.ranger-solr
-      args:
-        - SOLR_VERSION=${SOLR_VERSION}
-        - KERBEROS_ENABLED=${KERBEROS_ENABLED}
-    image: ranger-solr
-    container_name: ranger-solr
-    hostname: ranger-solr.rangernw
-    volumes:
-      - ./dist/keytabs/ranger-solr:/etc/keytabs
-    networks:
-      - ranger
-    ports:
-      - "8983:8983"
-    depends_on:
-      ranger-kdc:
-        condition: service_started
-      ranger-zk:
-        condition: service_started
-    environment:
-      - KERBEROS_ENABLED
-      - KRB5_CONFIG=/etc/krb5.conf
-    command:
-      - solr-precreate
-      - ranger_audits
-      - /opt/solr/server/solr/configsets/ranger_audits/
 
 networks:
   ranger:

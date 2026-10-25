@@ -153,6 +153,14 @@
 		<value>true</value>
 	</property>
 	<property>
+		<name>ranger.servicedef.ozone.enableActionMatcherInPoliciesCondition</name>
+		<value>false</value>
+		<description>
+			When true, enables Ozone action-matches (RangerActionMatcher) policy conditions
+			in the Admin UI and applies S3 action-based evaluation in the Ozone authorizer.
+		</description>
+	</property>
+	<property>
 		<name>ranger.xuser.createdByUserId</name>
 		<value>1</value>
 	</property>
@@ -169,6 +177,19 @@
 	<property>
 		<name>ranger.admin.login.autolock.maxfailure</name>
 		<value>5</value>
+	</property>
+	<property>
+		<name>ranger.session.limit.concurrency</name>
+		<value>0</value>
+		<description>
+			Maximum number of concurrent Ranger Admin UI sessions per user.
+			When the limit is exceeded, the oldest UI session is expired so the new login succeeds.
+			0 or a negative value means no limit (default). Plugin policy/tag/role download
+			sessions and non-browser REST/API clients (for example scripted RangerClient or curl)
+			do not count toward this limit. Browser detection uses ranger.krb.browser-useragents-regex.
+			Enforcement is per Ranger Admin process using that node's in-memory session list.
+			In an HA or load-balanced deployment a user can hold up to this many UI sessions on each node.
+		</description>
 	</property>
 
 <!-- # anonymous access -->
@@ -322,7 +343,7 @@
 
 	<property>
 		<name>ranger.service.https.attrib.ssl.protocol</name>
-		<value>TLSv1.2</value>
+		<value>TLS</value>
 	</property>
 
 	<property>
@@ -488,6 +509,12 @@
 	</property>
 
 	<property>
+		<name>ranger.serviceconfig.validate.require.saved.service</name>
+		<value>false</value>
+		<description>When true, validateConfig for a named service requires a saved service record and rejects endpoint URLs that differ from the saved configuration.</description>
+	</property>
+
+	<property>
 		<name>ranger.timed.executor.max.threadpool.size</name>
 		<value>10</value>
 		<description></description>
@@ -514,6 +541,34 @@
 	</property>
 	<property>
 		<name>ranger.audit.elasticsearch.bootstrap.enabled</name>
+		<value>true</value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.urls</name>
+		<value></value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.protocol</name>
+		<value>http</value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.port</name>
+		<value>9200</value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.user</name>
+		<value></value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.password</name>
+		<value></value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.index</name>
+		<value>ranger_audits</value>
+	</property>
+	<property>
+		<name>ranger.audit.opensearch.bootstrap.enabled</name>
 		<value>true</value>
 	</property>
 	<property>
@@ -674,5 +729,9 @@
 	<property>
 		<name>ranger.allow.kerberos.auth.login.browser</name>
 		<value>false</value>
+	</property>
+	<property>
+		<name>ranger.pam.service</name>
+		<value>login</value>
 	</property>
 </configuration>

@@ -49,7 +49,6 @@ import org.apache.ranger.service.XAccessAuditService;
 import org.apache.ranger.service.XAuditMapService;
 import org.apache.ranger.service.XGroupService;
 import org.apache.ranger.service.XPermMapService;
-import org.apache.ranger.service.XPolicyService;
 import org.apache.ranger.service.XUgsyncAuditInfoService;
 import org.apache.ranger.service.XUserService;
 import org.apache.ranger.solr.SolrAccessAuditsService;
@@ -146,10 +145,10 @@ public class AssetMgr extends AssetMgrBase {
     ElasticSearchAccessAuditsService elasticSearchAccessAuditsService;
 
     @Autowired
-    CloudWatchAccessAuditsService cloudWatchAccessAuditsService;
+    org.apache.ranger.opensearch.OpenSearchAccessAuditsService openSearchAccessAuditsService;
 
     @Autowired
-    XPolicyService xPolicyService;
+    CloudWatchAccessAuditsService cloudWatchAccessAuditsService;
 
     @Autowired
     RangerTransactionSynchronizationAdapter transactionSynchronizationAdapter;
@@ -761,6 +760,8 @@ public class AssetMgr extends AssetMgrBase {
             return solrAccessAuditsService.searchXAccessAudits(searchCriteria);
         } else if (RangerBizUtil.AUDIT_STORE_ELASTIC_SEARCH.equalsIgnoreCase(xaBizUtil.getAuditDBType())) {
             return elasticSearchAccessAuditsService.searchXAccessAudits(searchCriteria);
+        } else if (RangerBizUtil.AUDIT_STORE_OPENSEARCH.equalsIgnoreCase(xaBizUtil.getAuditDBType())) {
+            return openSearchAccessAuditsService.searchXAccessAudits(searchCriteria);
         } else if (RangerBizUtil.AUDIT_STORE_CLOUD_WATCH.equalsIgnoreCase(xaBizUtil.getAuditDBType())) {
             return cloudWatchAccessAuditsService.searchXAccessAudits(searchCriteria);
         } else {

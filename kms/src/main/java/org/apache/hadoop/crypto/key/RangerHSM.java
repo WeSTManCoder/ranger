@@ -42,15 +42,19 @@ import java.security.cert.CertificateException;
 public class RangerHSM implements RangerKMSMKI {
     static final Logger logger = LoggerFactory.getLogger(RangerHSM.class);
 
-    private static final String MK_CIPHER          = "AES";
-    private static final int    MK_KeySize         = 128;
-    private static final String PARTITION_PASSWORD = "ranger.ks.hsm.partition.password";
-    private static final String PARTITION_NAME     = "ranger.ks.hsm.partition.name";
-    private static final String HSM_TYPE           = "ranger.ks.hsm.type";
-    private static final String ALIAS              = "RangerKMSKey";
+    private static final String MK_CIPHER               = "AES";
+    private static final int    DEFAULT_MK_KEY_SIZE     = 256;
+    private static final String PARTITION_PASSWORD      = "ranger.ks.hsm.partition.password";
+    private static final String PARTITION_NAME          = "ranger.ks.hsm.partition.name";
+    private static final String HSM_TYPE                = "ranger.ks.hsm.type";
+    private static final String MK_KEY_SIZE             = "ranger.kms.hsm.masterkey.size";
+    private static final String MK_ALIAS                = "ranger.ks.hsm.masterkey.alias";
+    private static final String DEFAULT_MK_ALIAS        = "RangerKMSKey";
 
     private KeyStore myStore;
     private String   hsmKeystore;
+    private String   mkAlias;
+    private int      mkKeySize;
 
     public RangerHSM() {
     }
@@ -63,6 +67,8 @@ public class RangerHSM implements RangerKMSMKI {
          */
         String passwd        = conf.get(PARTITION_PASSWORD);
         String partitionName = conf.get(PARTITION_NAME);
+        this.mkAlias         = conf.get(MK_ALIAS, DEFAULT_MK_ALIAS);
+        this.mkKeySize       = conf.getInt(MK_KEY_SIZE, DEFAULT_MK_KEY_SIZE);
         String errorMsg      = StringUtils.EMPTY;
 
         hsmKeystore = conf.get(HSM_TYPE);
@@ -98,29 +104,31 @@ public class RangerHSM implements RangerKMSMKI {
     public boolean generateMasterKey(String password) throws Throwable {
         logger.debug("==> RangerHSM.generateMasterKey()");
 
-        if (!this.myStore.containsAlias(ALIAS)) {
+        boolean isMKGenerated = false;
+
+        if (!this.myStore.containsAlias(mkAlias)) {
             try {
-                logger.info("Generating AES Master Key for '{}' HSM Provider", hsmKeystore);
+                logger.info("Generating AES Master Key for '{}' HSM Provider and keySize is {}", hsmKeystore, this.mkKeySize);
 
                 KeyGenerator keyGen = KeyGenerator.getInstance(MK_CIPHER, hsmKeystore);
 
-                keyGen.init(MK_KeySize);
+                keyGen.init(this.mkKeySize);
 
                 SecretKey aesKey = keyGen.generateKey();
 
-                myStore.setKeyEntry(ALIAS, aesKey, password.toCharArray(), (java.security.cert.Certificate[]) null);
+                myStore.setKeyEntry(mkAlias, aesKey, password.toCharArray(), (java.security.cert.Certificate[]) null);
 
-                return true;
+                isMKGenerated = true;
             } catch (Exception e) {
                 logger.error("generateMasterKey : Exception during Ranger Master Key Generation - {}", e.getMessage());
             }
         } else {
-            logger.info("Master key with alias - '{}' already exists!", ALIAS);
+            logger.info("Master key with alias - '{}' already exists!", mkAlias);
         }
 
         logger.debug("<== RangerHSM.generateMasterKey()");
 
-        return false;
+        return isMKGenerated;
     }
 
     @Override
@@ -131,12 +139,12 @@ public class RangerHSM implements RangerKMSMKI {
             try {
                 logger.debug("Searching for Ranger Master Key in Luna Keystore");
 
-                boolean result = myStore.containsAlias(ALIAS);
+                boolean result = myStore.containsAlias(mkAlias);
 
                 if (result) {
                     logger.debug("Ranger Master Key is present in Keystore");
 
-                    SecretKey key = (SecretKey) myStore.getKey(ALIAS, password.toCharArray());
+                    SecretKey key = (SecretKey) myStore.getKey(mkAlias, password.toCharArray());
 
                     return Base64.encode(key.getEncoded());
                 }
@@ -150,14 +158,20 @@ public class RangerHSM implements RangerKMSMKI {
         return null;
     }
 
-    public boolean setMasterKey(String password, byte[] key) {
+    @Override
+    public boolean setExternalKeyAsMK(String password, byte[] key) {
         if (myStore != null) {
             try {
-                Key aesKey = new SecretKeySpec(key, MK_CIPHER);
+                if (!myStore.containsAlias(mkAlias)) {
+                    Key aesKey = new SecretKeySpec(key, MK_CIPHER);
 
-                myStore.setKeyEntry(ALIAS, aesKey, password.toCharArray(), (java.security.cert.Certificate[]) null);
+                    myStore.setKeyEntry(mkAlias, aesKey, password.toCharArray(), (java.security.cert.Certificate[]) null);
 
-                return true;
+                    return true;
+                }
+                else {
+                    logger.warn("Master key with alias '{}' already exists in HSM, returning.", mkAlias);
+                }
             } catch (KeyStoreException e) {
                 logger.error("setMasterKey : Exception while setting Master Key, Error - {} ", e.getMessage());
             }

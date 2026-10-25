@@ -21,20 +21,22 @@ import com.hortonworks.registries.auth.Login;
 import com.hortonworks.registries.schemaregistry.client.LoadBalancedFailoverUrlSelector;
 import com.hortonworks.registries.schemaregistry.client.SchemaRegistryClient.Configuration;
 import com.hortonworks.registries.schemaregistry.client.UrlSelector;
+import com.hortonworks.registries.shaded.com.fasterxml.jackson.jaxrs.json.JacksonJaxbJsonProvider;
+import com.hortonworks.registries.shaded.javax.ws.rs.client.Client;
+import com.hortonworks.registries.shaded.javax.ws.rs.client.ClientBuilder;
+import com.hortonworks.registries.shaded.javax.ws.rs.client.WebTarget;
+import com.hortonworks.registries.shaded.javax.ws.rs.core.MediaType;
+import com.hortonworks.registries.shaded.javax.ws.rs.core.Response;
+import com.hortonworks.registries.shaded.org.glassfish.jersey.client.ClientConfig;
+import com.hortonworks.registries.shaded.org.glassfish.jersey.client.ClientProperties;
+import com.hortonworks.registries.shaded.org.glassfish.jersey.client.JerseyClientBuilder;
 import org.apache.ranger.services.schema.registry.client.connection.util.SecurityUtils;
 import org.codehaus.jettison.json.JSONArray;
 import org.codehaus.jettison.json.JSONObject;
-import org.glassfish.jersey.client.ClientConfig;
-import org.glassfish.jersey.client.ClientProperties;
-import org.glassfish.jersey.client.JerseyClientBuilder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.SSLContext;
-import javax.ws.rs.client.ClientBuilder;
-import javax.ws.rs.client.WebTarget;
-import javax.ws.rs.core.MediaType;
-import javax.ws.rs.core.Response;
 
 import java.io.UnsupportedEncodingException;
 import java.lang.reflect.InvocationTargetException;
@@ -53,9 +55,10 @@ public class DefaultSchemaRegistryClient implements ISchemaRegistryClient {
     private static final String SCHEMA_REGISTRY_PATH         = "/api/v1/schemaregistry";
     private static final String SCHEMAS_PATH                 = SCHEMA_REGISTRY_PATH + "/schemas/";
     private static final String SCHEMA_REGISTRY_VERSION_PATH = SCHEMA_REGISTRY_PATH + "/version";
-    private static final String SSL_ALGORITHM                = "TLSv1.2";
+    public static final String ERR_CLASS_NOT_IMPLEMENTING_URL_SELECTOR = ": class does not implement UrlSelector";
+    private static final String SSL_ALGORITHM                = "TLS";
 
-    private final javax.ws.rs.client.Client          client;
+    private final Client                             client;
     private final Login                              login;
     private final UrlSelector                        urlSelector;
     private final Map<String, SchemaRegistryTargets> urlWithTargets;
@@ -67,7 +70,11 @@ public class DefaultSchemaRegistryClient implements ISchemaRegistryClient {
 
         ClientConfig  config        = createClientConfig(conf);
         final boolean sslEnabled    = SecurityUtils.isHttpsConnection(conf);
+        // Apply MOXy prevention for shaded Jersey by using safe configuration
         ClientBuilder clientBuilder = JerseyClientBuilder.newBuilder().withConfig(config).property(ClientProperties.FOLLOW_REDIRECTS, Boolean.TRUE);
+
+        // Register Jackson provider to prevent MOXy usage in shaded Jersey
+        clientBuilder.register(JacksonJaxbJsonProvider.class);
 
         if (sslEnabled) {
             SSLContext ctx;
@@ -217,6 +224,11 @@ public class DefaultSchemaRegistryClient implements ISchemaRegistryClient {
     private ClientConfig createClientConfig(Map<String, ?> conf) {
         ClientConfig config = new ClientConfig();
 
+        // Apply MOXy prevention by explicitly registering Jackson and disabling auto-discovery
+        config.register(JacksonJaxbJsonProvider.class);
+        config.property("jersey.config.disableAutoDiscovery", true);
+        config.property("jersey.config.server.provider.scanning.recursive", false);
+
         config.property(ClientProperties.CONNECT_TIMEOUT, DEFAULT_CONNECTION_TIMEOUT);
         config.property(ClientProperties.READ_TIMEOUT, DEFAULT_READ_TIMEOUT);
         config.property(ClientProperties.FOLLOW_REDIRECTS, true);
@@ -237,7 +249,11 @@ public class DefaultSchemaRegistryClient implements ISchemaRegistryClient {
             urlSelector = new LoadBalancedFailoverUrlSelector(rootCatalogURL);
         } else {
             try {
-                urlSelector = (UrlSelector) Class.forName(urlSelectorClass).getConstructor(String.class).newInstance(rootCatalogURL);
+                Class<?> clazz = Class.forName(urlSelectorClass);
+                if (!UrlSelector.class.isAssignableFrom(clazz)) {
+                    throw new RuntimeException(urlSelectorClass + ERR_CLASS_NOT_IMPLEMENTING_URL_SELECTOR);
+                }
+                urlSelector = (UrlSelector) clazz.getConstructor(String.class).newInstance(rootCatalogURL);
             } catch (InstantiationException | IllegalAccessException | ClassNotFoundException | NoSuchMethodException | InvocationTargetException e) {
                 throw new RuntimeException(e);
             }

@@ -5,6 +5,9 @@
 !dist/ranger-*-kms.tar.gz
 !dist/ranger-*-usersync.tar.gz
 !dist/ranger-*-tagsync.tar.gz
+!dist/ranger-*-audit-ingestor.tar.gz
+!dist/ranger-*-audit-dispatcher.tar.gz
+!dist/ranger-*-pdp.tar.gz
 !dist/ranger-*-hdfs-plugin.tar.gz
 !dist/ranger-*-yarn-plugin.tar.gz
 !dist/ranger-*-hive-plugin.tar.gz
@@ -13,5 +16,6 @@
 !dist/ranger-*-knox-plugin.tar.gz
 !dist/ranger-*-trino-plugin.tar.gz
 !dist/ranger-*-ozone-plugin.tar.gz
+!dist/ranger-*-solr-plugin.tar.gz
 !downloads/*
 !scripts/*
